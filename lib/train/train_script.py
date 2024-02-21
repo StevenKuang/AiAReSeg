@@ -1,6 +1,7 @@
 # For import modules
 import importlib
 import os
+import numpy as np
 
 from torch import nn
 from torch.nn.functional import l1_loss
@@ -19,7 +20,7 @@ from lib.utils.box_ops import giou_loss
 from .base_functions import *
 from lib.utils.mask_ops import IOULoss
 from monai.losses import DiceLoss
-
+import lib.train.losses as losses
 
 def run(settings):
     torch.cuda.empty_cache()
@@ -66,16 +67,21 @@ def run(settings):
         settings.device = torch.device('cuda:0')
 
     # Loss functions and actors
-    if settings.segmentation == False:
+    if settings.segmentation == True:
+        objective = {'BCE': nn.BCELoss(), 'mask_iou': DiceLoss(), 'MSE': nn.MSELoss()}
+        loss_weight = {'BCE': cfg.TRAIN.BCE_MASK_WEIGHT, 'mask_iou': cfg.TRAIN.IOU_MASK_WEIGHT,
+                       'MSE': cfg.TRAIN.MSE_MASK_WEIGHT}
+    elif settings.unsupervised == True:
+        if cfg.TRAIN.USE_RECONSTRUCTION:
+            objective = {'reconstruction': None, 'mask_iou': DiceLoss(), 'MSE': nn.MSELoss()}
+            loss_weight = {'reconstruction': cfg.TRAIN.RECONSTRUCTION_WEIGHT}
+        else:
+            objective = {'BCE': nn.BCELoss(), 'mask_iou': DiceLoss(), 'MSE': nn.MSELoss()}
+            loss_weight = {'BCE': cfg.TRAIN.BCE_MASK_WEIGHT, 'mask_iou': cfg.TRAIN.IOU_MASK_WEIGHT,
+            'MSE': cfg.TRAIN.MSE_MASK_WEIGHT}
+    else:
         objective = {'giou': giou_loss, 'l1': l1_loss, 'iou': nn.MSELoss()}
         loss_weight = {'giou': cfg.TRAIN.GIOU_WEIGHT, 'l1': cfg.TRAIN.L1_WEIGHT, 'iou': cfg.TRAIN.IOU_WEIGHT}
-    elif settings.unsupervised == True:
-        objective = {'reconstruction': nn.MSELoss()}
-        loss_weight = {'reconstruction': cfg.TRAIN.RECONSTRUCTION_WEIGHT}
-    else:
-        objective = {'BCE': nn.BCELoss(), 'mask_iou': DiceLoss(), 'MSE': nn.MSELoss()}
-        loss_weight = {'BCE': cfg.TRAIN.BCE_MASK_WEIGHT, 'mask_iou': cfg.TRAIN.IOU_MASK_WEIGHT, 'MSE': cfg.TRAIN.MSE_MASK_WEIGHT}
-
     # If we are doing segmentation then we need to change all of the weights and use MSE and GIOU(?)
 
     # The actor carries out the actions of the AiA network, such as forward pass, calculate losses, then backprop and update with optimizer

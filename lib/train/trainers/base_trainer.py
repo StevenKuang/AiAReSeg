@@ -8,6 +8,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 from lib.train.admin import multigpu
 
+import numpy as np
 
 class BaseTrainer:
     """
@@ -208,6 +209,7 @@ class BaseTrainer:
 
         # Load network
         checkpoint_dict = torch.load(checkpoint_path)
+        print('loading pretrained model from', checkpoint_path)
 
         # In the case that we are using transfer learning, we will remove some weights at this point:
         # We will try the following
@@ -290,6 +292,7 @@ class BaseTrainer:
         return True
 
     def load_state_dict(self, checkpoint=None):
+        # This implementation is most likely wrong
         """
         Loads a network checkpoint file.
 

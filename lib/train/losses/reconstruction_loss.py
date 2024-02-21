@@ -19,7 +19,7 @@ class ReconstructionLoss:
         self.criterion = nn.MSELoss() if cfg.GWM.CRITERION == 'L2' else nn.L1Loss()
         self.l1_optimize = cfg.GWM.L1_OPTIMIZE
         self.homography = cfg.GWM.HOMOGRAPHY
-        self.device=model.device
+        self.device = model.device
         self.cfg = cfg
         self.grid_x, self.grid_y = get_meshgrid(cfg.GWM.RESOLUTION, model.device)
         # self.mult_flow = cfg.GWM.USE_MULT_FLOW
@@ -61,7 +61,8 @@ class ReconstructionLoss:
         # loss = sum(losses) / k
         loss = sum(self.criterion(flow, rec_flow) / k for rec_flow in rec_flows)
         wandb.log({"rec_mse_loss": loss.item()})
-        wandb.log({"rec_l1_loss": sum(self._extra_losses, 0.).item() / len(self._extra_losses)})
+        if isinstance(sum(self._extra_losses, 0.), torch.Tensor):
+            wandb.log({"rec_l1_loss": sum(self._extra_losses, 0.).item() / len(self._extra_losses)})
         if len(self._extra_losses):
             loss = loss * self.mse_weight + sum(self._extra_losses, 0.) / len(self._extra_losses) * self.l1_weight
         self._extra_losses = []

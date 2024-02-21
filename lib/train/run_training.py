@@ -94,7 +94,7 @@ def main():
         torch.cuda.set_device(args.local_rank)
     else:
         torch.cuda.set_device(0)
-    use_wandb = False
+    use_wandb = True
     if use_wandb:
         wandb.init(
             project="Unsupervised AiAReSeg",
@@ -103,6 +103,7 @@ def main():
                 "architecture": "CNN+ViT",
                 "dataset": "CACTUSS transverse",
                 "epochs": 50,
+                "mode": "disabled"
             }
         )
     # Run training line

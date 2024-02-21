@@ -602,19 +602,23 @@ class AIATRACKProcessingUnsupSeg(BaseProcessing):
                     return data
             data[s + '_images_o'] = [torch.tensor(ele).permute(2,0,1) for ele in frames_resized]
 
-            # # Apply transforms
-            # data[s + '_images'], data[s + '_flow'], data[s + '_att'] = self.transform[s](
-            #     image=frames_resized, flow=gt_flow, att=att_mask, joint=True)      # was False, why?
-            # # seems u and v in OF are flipped, flip them back
-            # data[s + '_flow'] = [torch.stack([data[s + '_flow'][i][:, :, 1], data[s + '_flow'][i][:, :, 0]], dim=2) for i in range(len(data[s + '_flow']))]
+            # Apply transforms
+            if s in ['reference']:
+                data[s + '_images'], data[s + '_flow'], data[s + '_att'] = self.transform[s](
+                    image=frames_resized, flow=gt_flow, att=att_mask, joint=True, new_roll=False)
+            else:
+                data[s + '_images'], data[s + '_flow'], data[s + '_att'] = self.transform[s](
+                    image=frames_resized, flow=gt_flow, att=att_mask, joint=True)      # was False, why?
+            # seems u and v in OF are flipped, flip them back
+            data[s + '_flow'] = [torch.stack([data[s + '_flow'][i][:, :, 1], data[s + '_flow'][i][:, :, 0]], dim=2) for i in range(len(data[s + '_flow']))]
 
-            # what if no transform
-            mean = torch.tensor([0.485, 0.465, 0.406])
-            std = torch.tensor([0.229, 0.224, 0.225])
-            data[s + '_images'] = tfm.Transform(tfm.ToTensorAndJitter(0), tfm.Normalize(mean, std))(image=frames_resized, joint=True)
-            data[s + '_flow'], data[s + '_att'] = (
-                [torch.tensor(ele) for ele in gt_flow],
-                [torch.tensor(ele) for ele in att_mask])
+            # # what if no transform
+            # mean = torch.tensor([0.485, 0.465, 0.406])
+            # std = torch.tensor([0.229, 0.224, 0.225])
+            # data[s + '_images'] = tfm.Transform(tfm.ToTensorAndJitter(0), tfm.Normalize(mean, std))(image=frames_resized, joint=True)
+            # data[s + '_flow'], data[s + '_att'] = (
+            #     [torch.tensor(ele) for ele in gt_flow],
+            #     [torch.tensor(ele) for ele in att_mask])
 
             # # plot the cropped flow
             # for i in range(len(data[s + '_flow'])):
@@ -628,11 +632,6 @@ class AIATRACKProcessingUnsupSeg(BaseProcessing):
             #     ax[1][1].imshow(data[s + '_images'][i].permute(1, 2, 0).cpu().numpy())
             #     plt.show()
 
-            # Draw the transform out and see how it looks like
-            # ax = plt.gca()
-            # plt.imshow(data['search_images'][0])
-            # ax.add_patch(plt.Rectangle((data['search_anno'][0][0], data['search_anno'][0][1]), data['search_anno'][0][2], data['search_anno'][0][3], fill=False, color = [0.000, 0.447, 0.741], linewidth=3))
-            # plt.show()
 
             if s in ['reference']:
                 feat_size = self.output_sz[s] // 16

@@ -73,22 +73,27 @@ class LTRTrainer(BaseTrainer):
             data['epoch'] = self.epoch
             data['settings'] = self.settings
             # Forward pass
+            # with torch.autograd.detect_anomaly():
             loss, stats = self.actor(data)
 
+            # print([param.requires_grad for param incnet.parameters()])
             # Backward pass and update weights
             if loader.training:
                 self.optimizer.zero_grad()
                 loss.backward()
-                # monitor gradients before clipping
-                gradients = np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
-                print(f'Mean gradient norm before clip: {np.mean(gradients)}')
+
+                # # np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
+                # # monitor gradients before clipping
+                # gradients = np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
+                # print(f'Mean gradient norm before clip: {np.mean(gradients)}')
+                # # np.mean(np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None]))
 
                 if self.settings.grad_clip_norm > 0:
                     torch.nn.utils.clip_grad_norm_(self.actor.net.parameters(), self.settings.grad_clip_norm)
 
-                # monitor gradients
-                gradients = np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
-                print(f'Mean gradient norm: {np.mean(gradients)}')
+                # # monitor gradients
+                # gradients = np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
+                # print(f'Mean gradient norm: {np.mean(gradients)}')
                 # wandb.log({'mean_gradient_norm': np.mean(gradients)})
 
                 self.optimizer.step()
@@ -194,3 +199,8 @@ class LTRTrainer(BaseTrainer):
             self.tensorboard_writer.write_info(self.settings.script_name, self.settings.description)
 
         self.tensorboard_writer.write_epoch(self.stats, self.epoch)
+
+    # def print_grad_hook(module, grad_input, grad_output):
+    #     print(f"Current module: {module}")
+    #     print(f"Grad input: {grad_input}")
+    #     print(f"Grad output: {grad_output}")

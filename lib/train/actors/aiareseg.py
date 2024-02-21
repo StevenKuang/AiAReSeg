@@ -17,6 +17,24 @@ class AIARESEGActor(BaseActor):
     """
     Actor for training.
     """
+    # def forward_hook(self, module, input, output):
+    #     if isinstance(input, tuple):
+    #         for i in input:
+    #             print(f"{module.__class__.__name__} input size: {i.shape}")
+    #     else:
+    #         print(f"{module.__class__.__name__} input size: {input.shape}")
+    #
+    #     if isinstance(output, tuple):
+    #         for i in output:
+    #             print(f"{module.__class__.__name__} output size: {i.shape}")
+    #     else:
+    #         print(f"{module.__class__.__name__} output size: {output.shape}")
+    #     # print(f"{module.__class__.__name__} input: {input}")
+    #     # print(f"{module.__class__.__name__} output: {output}")
+
+    # def backward_hook(self, module, grad_input, grad_output):
+    #     print(f"{module.__class__.__name__} grad input: {grad_input.shape}")
+    #     print(f"{module.__class__.__name__} grad output: {grad_output.shape}")
 
     def __init__(self, net, objective, loss_weight, settings, cfg = None):
         super().__init__(net, objective)
@@ -25,6 +43,15 @@ class AIARESEGActor(BaseActor):
         self.bs = self.settings.batchsize  # Batch size
         self.cfg = cfg
         self.device = torch.device('cuda:0')
+        if 'reconstruction' in self.objective:
+            self.objective = {'reconstruction': losses.ReconstructionLoss(self.cfg, self)}
+        # Register a hook for each layer
+        # for name, layer in self.net.named_children():
+        #     layer.__name__ = name
+        #     # layer.register_forward_hook(self.forward_hook)
+        #     layer.register_full_backward_hook(self.backward_hook)
+
+
 
     def __call__(self, data):
         """
@@ -67,13 +94,6 @@ class AIARESEGActor(BaseActor):
         search_dict_list = []
         search_img = data['search_images'].view(-1, *data['search_images'].shape[2:])  # (batch, 3, 320, 320)
 
-        # Denorm
-        search_img_copy = search_img.permute(0,2,3,1).detach().cpu() #(b,320,320,3)
-        mean = torch.tensor([0.485, 0.465, 0.406])
-        std = torch.tensor([0.229, 0.224, 0.225])
-        search_img_denorm = (search_img_copy * std) + mean
-
-
 
         search_att = data['search_att'].view(-1, *data['search_att'].shape[2:])  # (batch, 320, 320)
 
@@ -88,9 +108,16 @@ class AIARESEGActor(BaseActor):
 
             # #########Plotting attention maps for debugging##########
             # # We plot the original, and then all of the attention maps in subsequent layers
+            #
+            # # Denorm
+            # search_img_copy = search_img.permute(0, 2, 3, 1).detach().cpu()  # (b,320,320,3)
+            # mean = torch.tensor([0.485, 0.465, 0.406])
+            # std = torch.tensor([0.229, 0.224, 0.225])
+            # search_img_denorm = (search_img_copy * std) + mean
+            #
             # copy_src = search_dict['feat']
             # copy_src = copy_src.permute(1, 2, 0).view(-1, 256, 20, 20)
-            # gt_flow = data['search_flow'].squeeze(0).permute(0, 3, 1, 2)
+            # # gt_flow = data['search_flow'].squeeze(0).permute(0, 3, 1, 2)
             #
             # for i in range(copy_src.shape[0]):
             #     plot_img = copy_src[i, 0,...].detach().cpu().numpy().astype(float)
@@ -102,7 +129,7 @@ class AIARESEGActor(BaseActor):
             #
             #     plot_img_transformed = new_min + ((plot_img - min_val) * (new_max - new_min)) / (max_val - min_val)
             #     search_img_plot = search_img_denorm[i, ...].numpy()
-            #     rgb_flow = torch.tensor(flow_utils.flow2img(gt_flow[i].permute(1,2,0).cpu().numpy())).float() / 255.0
+            #     # rgb_flow = torch.tensor(flow_utils.flow2img(gt_flow[i].permute(1,2,0).cpu().numpy())).float() / 255.0
             #
             #     fig, ax = plt.subplots(1, 3)
             #     ax[0].imshow(search_img_plot)
@@ -112,12 +139,11 @@ class AIARESEGActor(BaseActor):
             #     ax[1].imshow(plot_img_transformed)
             #     ax[1].set_title('Attention maps')
             #
-            #     ax[2].imshow(rgb_flow)
-            #     ax[2].set_title('gt flow')
+            #     # ax[2].imshow(rgb_flow)
+            #     # ax[2].set_title('gt flow')
             #     plt.show()
             #
             # #########Plotting for debugging##########
-
 
             # Process the reference frames
             feat_dict_list = []
@@ -209,7 +235,8 @@ class AIARESEGActor(BaseActor):
             #
             # plt.show()
 
-
+            # print valid gradients in debug watch
+            # np.array([p.grad.norm().item() for p in self.net.parameters() if p.grad is not None])
             return out_seg
 
         # Forward the corner head
@@ -270,16 +297,37 @@ class AIARESEGActor(BaseActor):
 
         if return_status:
             # Status for log
-
             status = {'Ls/total': loss.item(),
                       'Ls/bce': bce_loss.item(),
                       'Ls/iou': IOU_loss.item(),
                       'Ls/mse': mse.item()}
+            wandb.log(status)
             return loss, status
         else:
             return loss
     def compute_losses_flow_seg(self,out_seg, data, return_status=True):
         """optical flow reconstruction loss from the guess what moves model"""
+        if not self.cfg.TRAIN.USE_RECONSTRUCTION:
+            flow = data['search_flow'][0]
+            # create a binary mask from flow
+            threshold = 0.2
+            mask_u = flow.abs()[:, :, :, 0] > threshold
+            mask_v = flow.abs()[:, :, :, 1] > threshold
+            mask_from_flow = (mask_u | mask_v).float().unsqueeze(1)
+
+            # # debug
+            # # visualize the binary mask for debugging, if true then white else black
+            # ori_img = data['search_images'][0]
+            # rgb_mask = torch.cat([mask_from_flow.squeeze(0), mask_from_flow.squeeze(0), mask_from_flow.squeeze(0)], dim=0).permute(1, 2, 0).cpu().numpy() * 255
+            # rgb_flow = torch.tensor(flow_utils.flow2img(flow.cpu().numpy())).float() / 255.0
+            # fig, axs = plt.subplots(1, 3)
+            # axs[0].imshow(rgb_mask)
+            # axs[1].imshow(rgb_flow)
+            # axs[2].imshow(ori_img.permute(1, 2, 0).cpu().numpy())
+            # plt.show()
+
+            return self.compute_losses_seg(out_seg, mask_from_flow, return_status)
+
         # visualized gt_flow is a tensor of shape (1, B, 2, H, W)
         # gt_flow and out_seg_softmax must be of the same shape
         gt_flow = data['search_flow'].squeeze(0).permute(0, 3, 1, 2)
@@ -289,8 +337,8 @@ class AIARESEGActor(BaseActor):
         #     plt.imshow(rgb_flow)
         #     plt.show()
 
-        criterions = {'reconstruction': (losses.ReconstructionLoss(self.cfg, self), self.cfg.GWM.LOSS_MULT.REC, lambda x: 1)}
-        criterion = losses.CriterionDict(criterions)
+        # criterions = {'reconstruction': (losses.ReconstructionLoss(self.cfg, self), self.cfg.GWM.LOSS_MULT.REC, lambda x: 1)}
+        # criterion = losses.CriterionDict(criterions)
         sample = None
         iteration = 0
 
@@ -300,10 +348,11 @@ class AIARESEGActor(BaseActor):
         out_seg = torch.tensor(out_seg,requires_grad=True)
 
         out_seg_softmax = torch.softmax(out_seg, dim=3)
-        reconstruction_loss, log_dict = criterion(sample, gt_flow, out_seg_softmax, iteration)
-        loss = reconstruction_loss
+        rec_loss = self.objective['reconstruction'](sample, gt_flow, out_seg_softmax, iteration, train=True)
+
         # wandb.log({"Per Sequence Reconstruction Loss": reconstruction_loss})
-        print(f"Reconstruction loss: {reconstruction_loss}")
+        print(f"Reconstruction loss: {rec_loss}")
+        loss = rec_loss * self.loss_weight['reconstruction']
         # bce_loss = self.objective['BCE'](out_seg,gt_flow)
         # try:
         #     IOU_loss = self.objective['mask_iou'](out_seg, gt_flow)
@@ -316,14 +365,9 @@ class AIARESEGActor(BaseActor):
         # loss = self.loss_weight['BCE'] * bce_loss + self.loss_weight['mask_iou'] * IOU_loss + self.loss_weight['MSE'] * mse
 
         if return_status:
-            # Status for log
             status = {'Ls/total': loss.item(),
-                      'Ls/reconstruction': reconstruction_loss.item()}
+                      'Ls/reconstruction': rec_loss.item()}
 
-            # status = {'Ls/total': loss.item(),
-            #           'Ls/bce': bce_loss.item(),
-            #           'Ls/iou': IOU_loss.item(),
-            #           'Ls/mse': mse.item()}
             return loss, status
         else:
             return loss

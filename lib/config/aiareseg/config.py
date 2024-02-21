@@ -48,9 +48,8 @@ cfg.TRAIN.IOU_WEIGHT = 2.0
 cfg.TRAIN.IOU_MASK_WEIGHT = 5.0
 cfg.TRAIN.BCE_MASK_WEIGHT = 2.0
 cfg.TRAIN.MSE_MASK_WEIGHT = 2.0
-# L1_RECONSTRUCTION_WEIGHT: 0.6
+cfg.TRAIN.USE_RECONSTRUCTION = False
 cfg.TRAIN.L1_RECONSTRUCTION_WEIGHT = 0.6
-# MSE_RECONSTRUCTION_WEIGHT: 0.4
 cfg.TRAIN.MSE_RECONSTRUCTION_WEIGHT = 0.4
 cfg.TRAIN.RECONSTRUCTION_WEIGHT = 10.0
 cfg.TRAIN.DEEP_SUPERVISION = False
@@ -152,7 +151,7 @@ def add_gwm_config(cfg):
     cfg.GWM.SAMPLE_KEYS = ["rgb"]
     cfg.GWM.ADD_POS_EMB = False
     cfg.GWM.CRITERION = "L2"
-    cfg.GWM.L1_OPTIMIZE = True
+    cfg.GWM.L1_OPTIMIZE = False
     cfg.GWM.HOMOGRAPHY = 'quad'  # False
     cfg.GWM.HOMOGRAPHY_SUBSAMPLE = 8
     cfg.GWM.HOMOGRAPHY_SKIP = 0.4
@@ -175,7 +174,7 @@ def add_gwm_config(cfg):
     cfg.GWM.FLOW_NORM = False
 
     cfg.GWM.LOSS_MULT = edict()
-    cfg.GWM.LOSS_MULT.REC = 0.03
+    cfg.GWM.LOSS_MULT.REC = 1.0
     cfg.GWM.LOSS_MULT.HEIR_W = [0.1, 0.3, 0.6]
 
 
