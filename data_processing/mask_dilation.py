@@ -129,7 +129,9 @@ def main(root,mode="Train"):
 
 if "__main__" == __name__:
 
-    root = "/media/atr17/HDD Storage/Datasets_Download/Full_Catheter_Dataset/new_axial_dataset_dilated2"
+    # root = "/media/atr17/HDD Storage/Datasets_Download/Full_Catheter_Dataset/new_axial_dataset_dilated2"
+    root = "/media/liming/Data/IDP/dataset/new_axial_dataset_dilated2"
+    
     main(root, mode="Val")
 
 

@@ -2,9 +2,9 @@ import torch
 from torch.utils.data.distributed import DistributedSampler
 
 import lib.train.data.transforms as tfm
-from lib.train.data import sampler, opencv_loader, processing, LTRLoader
+from lib.train.data import tracking_sampler, opencv_loader, processing, LTRLoader, unsup_sampler
 # Datasets related
-from lib.train.dataset import Lasot, Got10k, MSCOCOSeq, TrackingNet, Catheter_tracking, Catheter_segmentation
+from lib.train.dataset import Lasot, Got10k, MSCOCOSeq, TrackingNet, Catheter_tracking, Catheter_segmentation, Catheter_unsupervised_segmentation
 
 
 def update_settings(settings, cfg):
@@ -29,7 +29,7 @@ def names2datasets(name_list: list, settings, image_loader):
     assert isinstance(name_list, list)
     datasets = []
     for name in name_list:
-        assert name in ['GOT10K_train', 'GOT10K_vot_train', 'LASOT', 'COCO17', 'TRACKINGNET','Catheter_tracking','Catheter_segmentation']
+        assert name in ['GOT10K_train', 'GOT10K_vot_train', 'LASOT', 'COCO17', 'TRACKINGNET','Catheter_tracking','Catheter_segmentation', 'Catheter_unsupervised_segmentation']
         if name == 'LASOT':
             datasets.append(Lasot(settings.env.lasot_dir, split='train', image_loader=image_loader))
         elif name == 'GOT10K_train':
@@ -45,6 +45,8 @@ def names2datasets(name_list: list, settings, image_loader):
             datasets.append(Catheter_tracking(settings.env.catheter_tracking_dir, mode='Train'))
         elif name == 'Catheter_segmentation':
             datasets.append(Catheter_segmentation(settings.env.catheter_segmentation_dir, mode='Train'))
+        elif name == 'Catheter_unsupervised_segmentation':
+            datasets.append(Catheter_unsupervised_segmentation(settings.env.catheter_transverse_segmentation_dir, mode='Train'))
     return datasets
 
 
@@ -70,7 +72,8 @@ def build_dataloaders(cfg, settings):
                                     #tfm.RandomCropping(probability=0.1),
                                     tfm.Gaussian_Blur(probability=0.3),
                                     tfm.Salt_and_pepper(probability=0.5),
-                                    tfm.Normalize(mean=cfg.DATA.MEAN, std=cfg.DATA.STD))
+                                    tfm.Normalize(mean=cfg.DATA.MEAN, std=cfg.DATA.STD)
+                                    )
 
 
     # The tracking pairs processing module
@@ -80,7 +83,17 @@ def build_dataloaders(cfg, settings):
     # This data loader adds some noise to the bounding box, then a square is cropped from the image.
     # Please check the processing scipt for more information
     if settings.segmentation:
-        data_processing_train = processing.AIATRACKProcessingSeg(search_area_factor=search_area_factor,
+        if settings.unsupervised:
+            data_processing_train = processing.AIATRACKProcessingUnsupSeg(search_area_factor=search_area_factor,
+                                                                 output_sz=output_sz,
+                                                                 mode='sequence',
+                                                                 transform=transform_train,
+                                                                 joint_transform=transform_joint,
+                                                                 center_jitter_factor=settings.center_jitter_factor,
+                                                                 scale_jitter_factor=settings.scale_jitter_factor,
+                                                                 settings=settings)
+        else:
+            data_processing_train = processing.AIATRACKProcessingSeg(search_area_factor=search_area_factor,
                                                                  output_sz=output_sz,
                                                                  mode='sequence',
                                                                  transform=transform_train,
@@ -102,20 +115,30 @@ def build_dataloaders(cfg, settings):
     # Train sampler and loader
     # The sampler is responsible for sampling frames from training sequences to form batches
     # This could be one of the places where things went wrong
-    dataset_train = sampler.TrackingSampler(
-        datasets=names2datasets(cfg.DATA.TRAIN.DATASETS_NAME, settings, opencv_loader),
-        p_datasets=cfg.DATA.TRAIN.DATASETS_RATIO,
-        samples_per_epoch=cfg.DATA.TRAIN.SAMPLE_PER_EPOCH,
-        max_gap=cfg.DATA.MAX_SAMPLE_INTERVAL,
-        processing=data_processing_train,
-        segmentation=settings.segmentation)
+    
+    if settings.unsupervised:
+        dataset_train = unsup_sampler.UnsupervisedSampler(
+            datasets=names2datasets(cfg.DATA.TRAIN.DATASETS_NAME, settings, opencv_loader),
+            p_datasets=cfg.DATA.TRAIN.DATASETS_RATIO,
+            samples_per_epoch=cfg.DATA.TRAIN.SAMPLE_PER_EPOCH,
+            max_gap=cfg.DATA.MAX_SAMPLE_INTERVAL,
+            processing=data_processing_train,
+            segmentation=settings.segmentation)
+    else:
+        dataset_train = tracking_sampler.TrackingSampler(
+            datasets=names2datasets(cfg.DATA.TRAIN.DATASETS_NAME, settings, opencv_loader),
+            p_datasets=cfg.DATA.TRAIN.DATASETS_RATIO,
+            samples_per_epoch=cfg.DATA.TRAIN.SAMPLE_PER_EPOCH,
+            max_gap=cfg.DATA.MAX_SAMPLE_INTERVAL,
+            processing=data_processing_train,
+            segmentation=settings.segmentation)
 
     # The sampler becomes zero if we are not using distributed processing
     train_sampler = DistributedSampler(dataset_train) if settings.local_rank != -1 else None
 
     shuffle = False if settings.local_rank != -1 else True
 
-
+    # change num_workers to 1 in the cfg file to debug
     loader_train = LTRLoader('train', dataset_train, training=True, batch_size=cfg.TRAIN.BATCH_SIZE, shuffle=shuffle,
                              num_workers=cfg.TRAIN.NUM_WORKER, drop_last=True, stack_dim=1, sampler=train_sampler)
 

@@ -3,9 +3,10 @@ from lib.test.evaluation.data import Sequence, BaseDataset, SequenceList
 from lib.test.utils.load_text import load_text
 import os
 import torch
+import cv2
 
 
-class CatheterDataset(BaseDataset):
+class CatheterTransSegDataset(BaseDataset):
     """
     The catheter tracking dataset consists of 50 training sequences and an additional 15 testing sequences.
 
@@ -17,10 +18,11 @@ class CatheterDataset(BaseDataset):
 
     def __init__(self, subset='Val'):
         super().__init__()
-        self.base_path = self.env_settings.catheter_path
+        self.base_path = self.env_settings.catheterseg_path
         print("Catheter Base Path:")
         print(self.base_path)
-        self.base_path = os.path.join(self.base_path, subset)
+        self.base_path = os.path.join(self.base_path, 'Images', subset)
+        self.data_path = self.env_settings.catheterseg_path
 
         self.sequence_list = self._get_sequence_list(subset)
 
@@ -38,6 +40,10 @@ class CatheterDataset(BaseDataset):
 
     # A get sequence list method at runs the construct sequence method
 
+    def sort_seq_names(self,name):
+        parts = name.split("-")
+        return int(parts[1])
+
     def _get_sequence_list(self,subset):
         if subset == 'Val':
             # We grab all of the sequences in the folder by doing a walk
@@ -49,31 +55,56 @@ class CatheterDataset(BaseDataset):
                     if subdir != 'img':
                         seq_list.append(subdir)
 
-            return sorted(seq_list, key=lambda x:x[-2:])
+            return sorted(seq_list, key=self.sort_seq_names)
 
     def get_sequence_list(self, subset='Val'):
         return SequenceList([self._construct_sequence(s) for s in self.sequence_list])
 
+    # def _read_bb_anno(self, seq_path):
+    #     # For each of the folders of sequences, you need to generate the annotations and put them into an annotation file
+    #     seq = seq_path.split('/')[-1]
+    #     bb_anno_file = os.path.join(seq_path, f'gt_{seq}.txt')
+    #     gt = []
+    #
+    #     with open(bb_anno_file) as f:
+    #         for line in f.readlines():
+    #             line = line[2:-3]
+    #             line = line.split(",")
+    #             line = [float(i) for i in line]
+    #             print(line)
+    #             gt.append(line)
+    #
+    #
+    #     return np.array(gt)
 
-    def _read_bb_anno(self, seq_path):
-        # For each of the folders of sequences, you need to generate the annotations and put them into an annotation file
+    def _read_mask_anno(self,seq_path):
+        # Here is the segmentation masks, load them and then put it into the same tensor
+        # This may be too big, if it is then try to reduce the number of images used
         seq = seq_path.split('/')[-1]
-        bb_anno_file = os.path.join(seq_path, f'gt_{seq}.txt')
+        mask_path = os.path.join(self.data_path,'Masks','Val',seq) # This put you into the mask folder for the sequence you are looking at
+
+        # Now we start to load the segmentation masks
         gt = []
+        filenames = os.listdir(mask_path)
+        filenames = sorted(filenames)
+        # filenames_index = int(np.floor(0.9*len(filenames)))
+        # filenames = filenames[filenames_index:]
+        for filename in filenames:
+            if filename.endswith(".png"):
+                path = os.path.join(mask_path, filename)
+                mask = cv2.imread(path,cv2.IMREAD_GRAYSCALE)
+                mask_tensor = torch.tensor(mask)
+                # Convert the image such that we will only have the label 1 for the catheter, or else it makes it zero
+                mask_tensor = torch.where(mask_tensor==2, 1, 0).float()
+                sum_check = mask_tensor.sum()
+                #mask_tensor = torch.nn.functional.interpolate(mask_tensor.unsqueeze(0).unsqueeze(0),(320,320))
+                gt.append(mask_tensor)
 
-        with open(bb_anno_file) as f:
-            for line in f.readlines():
-                line = line[2:-3]
-                line = line.split(",")
-                line = [float(i) for i in line]
-                print(line)
-                gt.append(line)
+        return torch.stack(gt)
 
-
-        return np.array(gt)
 
     def _get_sequence_path(self,seq_id,training_mode="Val"):
-        seq_name = self.sequence_list[seq_id-922]
+        seq_name = self.sequence_list[seq_id-716]
         class_name = seq_name.split('-')[0]
         vid_id = seq_name.split('-')[1]
 
@@ -101,13 +132,15 @@ class CatheterDataset(BaseDataset):
         sequence_number = int(sequence_name.split('-')[1])
 
         # Join the base path, with the class, with the sequence name, and then finally the ground truth file name
-        anno_path = os.path.join(self.base_path, self.base_path, class_name, sequence_name, f'gt_{sequence_name}.txt')
+        anno_path = os.path.join(self.base_path, class_name, sequence_name, f'gt_{sequence_name}.txt')
 
         seq_path = os.path.join(self.base_path, class_name, sequence_name)
 
-        frames_path = os.path.join(self.base_path, class_name, sequence_name, 'img')
+        #frames_path = os.path.join(self.base_path, class_name, sequence_name, 'img')
+        frames_path = os.path.join(self.base_path, class_name, sequence_name)
 
-        ground_truth_rect = self._read_bb_anno(seq_path)
+        #ground_truth_rect = self._read_bb_anno(seq_path)
+        ground_truth_mask = self._read_mask_anno(seq_path)
 
         #ground_truth_rect = None
         seq_len = self._get_seq_len(sequence_number)
@@ -136,7 +169,7 @@ class CatheterDataset(BaseDataset):
         target_class = class_name
 
         #return Sequence(sequence_name, frames_list, 'catheter_tracking', ground_truth_rect.view(-1, 4), object_class=target_class, target_visible=full_occlusion)
-        return Sequence(sequence_name, frames_list, 'catheter', ground_truth_rect.reshape(-1, 4), object_class=target_class, target_visible=full_occlusion)
+        return Sequence(sequence_name, frames_list, 'catheter', None, ground_truth_seg=ground_truth_mask, object_class=target_class, target_visible=full_occlusion)
         # return Sequence(sequence_name, frames_list, 'catheter', ground_truth_rect,
         #                 object_class=target_class, target_visible=full_occlusion)
 
@@ -144,11 +177,11 @@ class CatheterDataset(BaseDataset):
         return len(self.sequence_list)
 
 
-if "__main__" == __name__:
-
-    dataset = CatheterDataset(subset='Val')
-    sequence = dataset._construct_sequence(sequence_name='Catheter-690')
-    seq_len = dataset._get_seq_len(seq_id=690)
-    print(seq_len)
+# if "__main__" == __name__:
+#
+#     dataset = CatheterDataset(subset='Val')
+#     sequence = dataset._construct_sequence(sequence_name='Catheter-690')
+#     seq_len = dataset._get_seq_len(seq_id=690)
+#     print(seq_len)
 
 

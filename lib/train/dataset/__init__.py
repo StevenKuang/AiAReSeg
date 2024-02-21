@@ -5,3 +5,4 @@ from .lasot import Lasot
 from .tracking_net import TrackingNet
 from .catheter_tracking import Catheter_tracking
 from .catheter_segmentation import Catheter_segmentation
+from .catheter_unsupervised_segmentation import Catheter_unsupervised_segmentation

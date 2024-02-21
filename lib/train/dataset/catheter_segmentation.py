@@ -11,6 +11,9 @@ import pandas as pd
 import torch
 import torchvision.transforms as transforms
 
+# import sys
+# sys.path.append("/media/liming/Data/IDP/AiAProj/AiAReSeg")
+
 from lib.train.admin import env_settings
 from lib.train.data import jpeg4py_loader
 from lib.train.data import opencv_loader
@@ -252,6 +255,7 @@ class Catheter_segmentation(BaseVideoDataset):
 if '__main__' == __name__:
     root = "/media/atr17/HDD Storage/Datasets_Download/Full_Catheter_Dataset/Final_Dataset_Rot/Images/Train"
     seq_path = "/media/atr17/HDD Storage/Datasets_Download/Full_Catheter_Dataset/Final_Dataset_Rot/Images/Train/Catheter/Catheter-66"
+    # root = "/media/liming/Data/IDP/dataset/us_simulation3_cactuss"
     dataset = Catheter_segmentation(root)
     frame_list, anno_frames, object_meta = dataset.get_frames(seq_id=66, frame_ids=[14], anno=None)
     print("success!")

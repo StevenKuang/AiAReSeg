@@ -1,9 +1,13 @@
 import os
 import time
 from collections import OrderedDict
+from tqdm import tqdm
+import numpy as np
+import wandb
 
 import torch
 from torch.utils.data.distributed import DistributedSampler
+from itertools import islice
 
 from lib.train.admin import AverageMeter, StatValue
 from lib.train.admin import TensorboardWriter
@@ -58,10 +62,14 @@ class LTRTrainer(BaseTrainer):
         torch.set_grad_enabled(loader.training)
 
         self._init_timing()
-        for i, data in enumerate(loader, 1):
+        # limit = 5
+        avg_epoch_loss = 0
+        limit = loader.__len__()
+        for i, data in islice(enumerate(loader), limit):
             if self.move_data_to_gpu:
                 data = data.to(self.device)
-
+            # debug i
+            print(str(i) + '/' + str(loader.__len__()))
             data['epoch'] = self.epoch
             data['settings'] = self.settings
             # Forward pass
@@ -71,8 +79,18 @@ class LTRTrainer(BaseTrainer):
             if loader.training:
                 self.optimizer.zero_grad()
                 loss.backward()
+                # monitor gradients before clipping
+                gradients = np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
+                print(f'Mean gradient norm before clip: {np.mean(gradients)}')
+
                 if self.settings.grad_clip_norm > 0:
                     torch.nn.utils.clip_grad_norm_(self.actor.net.parameters(), self.settings.grad_clip_norm)
+
+                # monitor gradients
+                gradients = np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
+                print(f'Mean gradient norm: {np.mean(gradients)}')
+                # wandb.log({'mean_gradient_norm': np.mean(gradients)})
+
                 self.optimizer.step()
 
             # Update statistics
@@ -82,6 +100,9 @@ class LTRTrainer(BaseTrainer):
             # Print statistics
             self._print_stats(i, loader, batch_size)
 
+            avg_epoch_loss += loss.item()
+
+        wandb.log({'epoch_loss': avg_epoch_loss / limit})
     def train_epoch(self):
         """
         Do one epoch for each loader.
@@ -118,7 +139,7 @@ class LTRTrainer(BaseTrainer):
         current_time = time.time()
         average_fps = self.num_frames / (current_time - self.start_time)
         self.prev_time = current_time
-        if self.settings.local_rank in [-1, 0] and i == loader.__len__():
+        if self.settings.local_rank in [-1, 0] and i == loader.__len__() - 1:
             print_str = '[%d: %d]' % (self.epoch, loader.__len__())
             print_str += 'FPS: %.1f, ' % (average_fps)
             for name, val in self.stats[loader.name].items():
@@ -128,6 +149,7 @@ class LTRTrainer(BaseTrainer):
                         print_str += '%s: %.3f, ' % (name, val.avg)
 
             print(print_str[:-2])
+
             log_str = print_str[:-2] + '\n'
             with open(self.settings.log_file, 'a') as f:
                 f.write(log_str)

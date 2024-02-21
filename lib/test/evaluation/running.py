@@ -132,7 +132,8 @@ def run_sequence(seq: Sequence, tracker: Tracker, debug=False, num_gpu=8, segmen
         worker_id = int(worker_name[worker_name.find('-') + 1:]) - 1
         gpu_id = worker_id % num_gpu
         torch.cuda.set_device(gpu_id)
-    except:
+    except Exception as e:
+        print('no worker id found')
         pass
 
     def _results_exist():
@@ -201,7 +202,7 @@ def run_dataset(dataset, trackers, debug=False, threads=0, num_gpus=8, segmentat
     if mode == 'sequential':
         for seq in dataset:
             for tracker_info in trackers:
-                run_sequence(seq, tracker_info, debug=debug, segmentation=segmentation)
+                run_sequence(seq, tracker_info, debug=debug, segmentation=segmentation, num_gpu=1)
     elif mode == 'parallel':
         param_list = [(seq, tracker_info, debug, num_gpus) for seq, tracker_info in product(dataset, trackers)]
         with multiprocessing.Pool(processes=threads) as pool:

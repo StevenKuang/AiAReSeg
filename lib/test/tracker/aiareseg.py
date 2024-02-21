@@ -23,9 +23,12 @@ class AIARESEG(BaseTracker):
     def __init__(self, params, dataset_name):
         super(AIARESEG, self).__init__(params)
         network = build_aiareseg(params.cfg)
-        network.load_state_dict(torch.load(self.params.checkpoint, map_location='cpu')['net'], strict=True)
+        network.load_state_dict(torch.load(self.params.checkpoint)['net'], strict=True)
         self.cfg = params.cfg
         self.net = network.cuda()
+        # # torch 2.0 feature
+        # self.net = torch.compile(self.net)
+
         self.net.eval()
         self.preprocessor = Preprocessor()
         self.proprocessor_seg = Proprocessor_Seg()

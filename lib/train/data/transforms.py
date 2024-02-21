@@ -39,7 +39,7 @@ class Transform:
         if len(transforms) == 1 and isinstance(transforms[0], (list, tuple)):
             transforms = transforms[0]
         self.transforms = transforms
-        self._valid_inputs = ['image', 'coords', 'bbox', 'mask', 'att']
+        self._valid_inputs = ['image', 'coords', 'bbox', 'mask', 'att', 'flow']
         self._valid_args = ['joint', 'new_roll']
         self._valid_all = self._valid_inputs + self._valid_args
 
@@ -99,7 +99,7 @@ class TransformBase:
 
     def __init__(self):
         # Add 'att' to valid inputs
-        self._valid_inputs = ['image', 'coords', 'bbox', 'mask', 'att']
+        self._valid_inputs = ['image', 'coords', 'bbox', 'mask', 'att', 'flow']
         self._valid_args = ['new_roll']
         self._valid_all = self._valid_inputs + self._valid_args
         self._rand_params = None
@@ -134,7 +134,7 @@ class TransformBase:
 
     def _get_image_size(self, inputs):
         im = None
-        for var_name in ['image', 'mask']:
+        for var_name in ['image', 'mask', 'flow']:
             if inputs.get(var_name) is not None:
                 im = inputs[var_name]
                 break
@@ -269,7 +269,11 @@ class ToTensorAndJitter(TransformBase):
         else:
             raise ValueError('ERROR: dtype must be np.ndarray or torch.Tensor')
 
-
+    def transform_flow(self, flow, brightness_factor):
+        if isinstance(flow, np.ndarray):
+            return torch.from_numpy(flow)
+        else:
+            return flow
 class Normalize(TransformBase):
     """
     Normalize image.
@@ -283,6 +287,9 @@ class Normalize(TransformBase):
 
     def transform_image(self, image):
         return tvisf.normalize(image, self.mean, self.std, self.inplace)
+
+    def transform_flow(self, flow):
+        return flow
 
 
 class ToGrayscale(TransformBase):
@@ -385,6 +392,12 @@ class RandomHorizontalFlip_Norm(RandomHorizontalFlip):
             return coords_flip
         return coords
 
+    def transform_flow(self, flow, do_flip):
+        if do_flip:
+            if torch.is_tensor(flow):
+                return flow[:, torch.arange(flow.size(1)-1, -1, -1), :]
+        return flow
+
 class RandomCropping(TransformBase):
     """
     Crop image randomly with a probability p.
@@ -434,6 +447,14 @@ class RandomCropping(TransformBase):
                 return out
         return att
 
+    def transform_flow(self, flow, do_crop):
+        if do_crop:
+            if torch.is_tensor(flow):
+                out = self.cropper(flow.unsqueeze(0))
+                out = F.interpolate(out, size=(320, 320), mode='bilinear', align_corners=False).squeeze(0)
+                return out
+        pass
+
 class RandomRotation(TransformBase):
 
     """Applies rotation to the image with a probability of 0.5"""
@@ -469,6 +490,11 @@ class RandomRotation(TransformBase):
                 return tvisf.rotate(img=att, angle=self.angle).squeeze(0)
         return att
 
+    def transform_flow(self, flow, do_rot):
+        if do_rot:
+            if torch.is_tensor(flow):
+                return tvisf.rotate(img=flow.permute(2,0,1), angle=self.angle).permute(1,2,0)
+        return flow
 class Gaussian_Blur(TransformBase):
 
     """
@@ -488,6 +514,9 @@ class Gaussian_Blur(TransformBase):
             image = tvisf.gaussian_blur(image,kernel_size,sigma)
 
         return image
+
+    def transform_flow(self, flow, kernel_size=5, sigma=(0.1,5), do_blur=False):
+        return flow
 
 class Salt_and_pepper(TransformBase):
 
@@ -520,3 +549,6 @@ class Salt_and_pepper(TransformBase):
                 noisy_image_tensor[:, pepper_pixels] = 0.0  # Set pepper noise to 0.0 (black)
 
         return image
+
+    def transform_flow(self, flow, salt_prob=0.05, pepper_prob=0.05, do_sprinkle=False):
+        return flow

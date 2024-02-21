@@ -9,6 +9,7 @@ import math
 import matplotlib.patches as patches
 from torchvision.ops import masks_to_boxes
 
+from lib.train.data import flow_utils
 
 # Modified from the original test implementation
 # Replace cv.BORDER_REPLICATE with cv.BORDER_CONSTANT
@@ -200,7 +201,165 @@ def sample_image_seg(im, seg_mask=None, bbox=None, search_area_factor=None, outp
                                                                mode='bilinear', align_corners=False)
 
         return im_crop_padded, resize_factor_W, resize_factor_H, att_mask, mask_crop_padded, data_invalid, bbox
+def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, output_sz=None, data_invalid=False):
 
+    # try:
+    #     bbox = generate_bboxes(flow.unsqueeze(0))
+    # except:
+    #     data_invalid = True
+    #     return None, None, None, None, None, data_invalid, None
+
+    if bbox is None:
+        try:
+
+            bbox = generate_bboxes(flow[0].unsqueeze(0))
+
+        except:
+            data_invalid = True
+            return None, None, None, None, None, data_invalid, None
+
+        x1,y1,x2,y2 = bbox.squeeze(0).tolist()
+        w = x2-x1
+        h = y2-y1
+        bbox = [x1,y1,w,h]
+
+    if not isinstance(bbox, list):
+        x1, y1, w, h = bbox.tolist()
+        # w = x2-x1
+        # h = y2-y1
+    else:
+        x, y, w, h = bbox
+
+    # Lets plot both the image and the bounding box
+    # fig, ax = plt.subplots(1,2, figsize=(20,20))
+    # ax[0].imshow(im)
+    #
+    # rect = patches.Rectangle((int(x1), int(y1)), int(w), int(h), linewidth=2,  edgecolor='r', facecolor='none')
+    # ax[0].add_patch(rect)
+
+
+
+    # Crop image
+    crop_sz = math.ceil(math.sqrt(w * h) * search_area_factor)
+
+    if crop_sz < 1:
+        # raise Exception('ERROR: too small bounding box')
+        data_invalid = True
+        return None, None, None, None, None, data_invalid, None
+
+    x1 = round(x1 + 0.5 * w - crop_sz * 0.5)
+    x2 = x1 + crop_sz
+
+    y1 = round(y1 + 0.5 * h - crop_sz * 0.5)
+    y2 = y1 + crop_sz
+
+    x1_pad = max(0, -x1)
+    x2_pad = max(x2 - im.shape[1] + 1, 0)
+
+    y1_pad = max(0, -y1)
+    y2_pad = max(y2 - im.shape[0] + 1, 0)
+
+    # Crop target
+    im_crop = im[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]
+
+    # # plot the cropped image
+    # plt.imshow(im_crop)
+    # plt.show()
+
+    # # Also plot the segmentation mask
+    # flow_plot = flow[0].detach().cpu().int().numpy()
+    # mask = np.repeat(flow_plot[:,:,np.newaxis],3,axis=2)
+    # mask = np.where(mask==1.,[1.,0.,0.],[0.,0.,0.])
+    # rect = patches.Rectangle((int(x1), int(y1)), crop_sz, crop_sz, linewidth=2, edgecolor='b', facecolor='none')
+    # ax[1].add_patch(rect)
+    # output = im.copy().astype(float)
+    # output = cv.addWeighted(output,1.0,mask,0.5, 0.0, dtype=cv.CV_8U)
+    #
+    # ax[1].imshow(mask)
+    #
+    # plt.show()
+
+    # Crop the target flow as well
+    if isinstance(flow,list) or isinstance(flow,tuple):
+        flow = flow[0]
+
+    im_flow_crop = flow[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]
+    # # plot the cropped flow
+    # rgb_flow = torch.tensor(flow_utils.flow2img(im_flow_crop.cpu().numpy())).float() / 255.0
+    # plt.imshow(rgb_flow)
+    # plt.show()
+
+    # Pad
+    if isinstance(im, np.ndarray):
+        im_crop_padded = cv.copyMakeBorder(im_crop, y1_pad, y2_pad, x1_pad, x2_pad, cv.BORDER_CONSTANT)
+
+    elif isinstance(im, torch.Tensor):
+        # this implementation is wrong
+        flow_crop_padded = torch.nn.functional.pad(im_crop, (y1_pad, y2_pad, x1_pad, x2_pad), value=0)
+
+    flow_crop_padded = None
+    # convert flow to np.ndarray
+    im_flow_crop = im_flow_crop.cpu().numpy()
+    if isinstance(im_flow_crop, np.ndarray):
+        flow_crop_padded = cv.copyMakeBorder(im_flow_crop, y1_pad, y2_pad, x1_pad, x2_pad, cv.BORDER_CONSTANT)
+    elif isinstance(im_flow_crop, torch.Tensor):
+        # this implementation is wrong
+        flow_crop_padded = torch.nn.functional.pad(im_flow_crop, (y1_pad, y2_pad, x1_pad, x2_pad), value=0)
+
+    # # plot the cropped flow
+    # rgb_flow = torch.tensor(flow_utils.flow2img(flow_crop_padded)).float() / 255.0
+    # plt.imshow(rgb_flow)
+    # plt.show()
+
+    # Attention mask
+    H, W, _ = im_crop_padded.shape
+    att_mask = np.ones((H, W))
+    end_x, end_y = -x2_pad, -y2_pad
+    if y2_pad == 0:
+        end_y = None
+    if x2_pad == 0:
+        end_x = None
+    att_mask[y1_pad:end_y, x1_pad:end_x] = 0
+
+    if output_sz is not None:
+        resize_factor_H = output_sz/H
+        resize_factor_W = output_sz/W
+
+        if isinstance(im_crop_padded, np.ndarray):
+            im_crop_padded = cv.resize(im_crop_padded, (output_sz,output_sz))
+            att_mask = cv.resize(att_mask,(output_sz, output_sz)).astype(np.bool_)
+
+        elif isinstance(im_crop_padded, torch.Tensor):
+            im_crop_padded = torch.nn.functional.interpolate(im_crop_padded, size=(output_sz, output_sz), mode='bilinear', align_corners=False)
+            att_mask = torch.nn.functional.interpolate(im_crop_padded, size=(output_sz,output_sz), mode='bilinear', align_corners=False)
+
+
+        if isinstance(flow_crop_padded, np.ndarray):
+            flow_crop_padded = cv.resize(flow_crop_padded, (output_sz, output_sz))
+        elif isinstance(flow_crop_padded, torch.Tensor):
+            flow_crop_padded = torch.nn.functional.interpolate(flow_crop_padded.unsqueeze(0), size=(output_sz, output_sz),
+                                                               mode='bilinear', align_corners=False)
+
+        # # plot the cropped flow
+        # rgb_flow = torch.tensor(flow_utils.flow2img(flow_crop_padded)).float() / 255.0
+        # plt.imshow(rgb_flow)
+        # plt.show()
+
+        # convert back to tensor
+        flow_crop_padded = torch.tensor(flow_crop_padded)
+        # flip the u channel of the flow
+        # flow_crop_padded[:,:,0] = -flow_crop_padded[:,:,0]
+
+        # # plot the cropped image and flow
+        # fig, axs = plt.subplots(1, 2)
+        # axs[0].imshow(im_crop_padded)
+        # # plot the cropped flow
+        # rgb_flow = torch.tensor(flow_utils.flow2img(flow_crop_padded.cpu().numpy())).float() / 255.0
+        # axs[1].imshow(rgb_flow)
+        # plt.show()
+
+
+        return im_crop_padded, resize_factor_W, resize_factor_H, att_mask, flow_crop_padded, data_invalid, bbox
 def generate_bboxes(mask):
     # # Generating bounding boxes from the segmentation mask for cropping
     # non_zero_indices = torch.where(mask)
@@ -227,6 +386,18 @@ def image_proc_seg(frames, masks=None, jittered_boxes= None, search_area_factor=
     elif jittered_boxes is None:
         crops_resize_factors = [
             sample_image_seg(f, seg_mask=masks, search_area_factor=search_area_factor, output_sz=output_sz) for
+            f in frames]
+
+    frames_resized, resize_factor_W, resize_factor_H, att_mask, seg_mask, data_invalid, bbox = zip(*crops_resize_factors)
+
+    return frames_resized, att_mask, seg_mask, data_invalid, resize_factor_W, resize_factor_H, bbox
+
+def image_proc_unsup_seg(frames, flows=None, jittered_boxes= None, search_area_factor=None, output_sz=None):
+    if jittered_boxes is not None:
+        crops_resize_factors = [sample_image_unsup_seg(im=frame, flow=flow, bbox=b, search_area_factor=search_area_factor, output_sz=output_sz) for frame, flow, b in zip(frames, flows, jittered_boxes)]
+    elif jittered_boxes is None:
+        crops_resize_factors = [
+            sample_image_unsup_seg(f, flow=flows, search_area_factor=search_area_factor, output_sz=output_sz) for
             f in frames]
 
     frames_resized, resize_factor_W, resize_factor_H, att_mask, seg_mask, data_invalid, bbox = zip(*crops_resize_factors)
@@ -412,4 +583,105 @@ def perturb_box(box, min_iou=0.5, sigma_factor=0.1):
         perturb_factor *= 0.9
 
     return box_per, box_iou
+
+
+def flows_to_boxes(flows: torch.Tensor) -> torch.Tensor:
+    """
+    Convert optical flow to bounding boxes.
+
+    Args:
+        flows: Optical flow tensor of shape (num_flows, H, W, 2).
+
+    Returns:
+        torch.Tensor: Bounding boxes of shape (num_flows, 4).
+    """
+    num_flows = flows.shape[0]
+    frame_height, frame_width = flows[0].shape[:2]
+
+    # we only consider flow larger than a threshold to be significant,
+    # if a change in one direction is too small, we set it to 0
+    # temp_flows = flows.clone()
+    # threshold = 0.1
+    # temp_flows[temp_flows.abs() < threshold] = 0
+
+    # # debug
+    # temp_flow_before = flow_utils.flow2img(flows[0].cpu().numpy())
+    # before = torch.tensor(temp_flow_before).float() / 255.0
+    #
+    # temp_flows_after = flow_utils.flow2img(temp_flows[0].cpu().numpy())
+    # after = torch.tensor(temp_flows_after).float() / 255.0
+    #
+    # fig, axs = plt.subplots(1, 2)
+    # axs[0].imshow(before)
+    # axs[0].set_title('Before')
+    # axs[1].imshow(after)
+    # axs[1].set_title('After')
+    # plt.show()
+
+    # Get the bounding box
+    bounding_boxes = torch.zeros((num_flows, 4), device=flows.device, dtype=torch.float)
+    threshold = 0.2
+    for index, flow in enumerate(flows):
+        v, u, _ = torch.where(torch.abs(flow) > threshold)
+        # print('u:' + str(u.shape) + 'v:' + str(v.shape))
+        if u.shape[0] == 0 or v.shape[0] == 0:
+            return bounding_boxes
+        bounding_boxes[index, 0] = torch.min(u)
+        bounding_boxes[index, 1] = torch.min(v)
+        bounding_boxes[index, 2] = torch.max(u)
+        bounding_boxes[index, 3] = torch.max(v)
+
+        bounding_boxes[index] = expand_box_edge(bounding_boxes[index], frame_height, frame_width, 0.25)
+
+    # visualize the bounding box
+    # visualize_flow_bbox(bounding_boxes, flows, 'xyxy')
+
+    return bounding_boxes
+
+
+def expand_box_edge(bounding_box, frame_height, frame_width, factor = 0.1):
+    new_bounding_box = bounding_box.clone()
+    width = bounding_box[2] - bounding_box[0]
+    height = bounding_box[3] - bounding_box[1]
+    min_width, min_height = int(factor * frame_width), int(factor * frame_height)
+    if width >= min_width and height >= min_height:
+        return bounding_box
+
+    # expand the box
+    if width < min_width:
+        diff = min_width - width
+        new_bounding_box[0] = max(0, new_bounding_box[0] - int(diff / 2))
+        diff = diff - (bounding_box[0] - new_bounding_box[0])
+        new_bounding_box[2] = min(frame_width, new_bounding_box[2] + int(diff))
+    if height < min_height:
+        diff = min_height - height
+        new_bounding_box[1] = max(0, new_bounding_box[1] - int(diff / 2))
+        diff = diff - (bounding_box[1] - new_bounding_box[1])
+        new_bounding_box[3] = min(frame_height, new_bounding_box[3] + int(diff))
+    return new_bounding_box
+
+
+def visualize_flow_bbox(bounding_boxes, flows, mode='xywh'):
+    for index, flow in enumerate(flows):
+        temp_flow_before_raw = flow.cpu().numpy()
+        temp_flow_before = flow_utils.flow2img(temp_flow_before_raw)
+        before = torch.tensor(temp_flow_before).float() / 255.0
+        # add the bounding box
+        fig, ax = plt.subplots(1, 1)
+        ax.imshow(before)
+        if mode == 'xywh':
+            rect = patches.Rectangle((bounding_boxes[index][0].item(), bounding_boxes[index][1].item()),
+                                     bounding_boxes[index][2].item(), bounding_boxes[index][3].item(),
+                                     linewidth=1, edgecolor='r', facecolor='none')
+        elif mode == 'xyxy':
+            rect = patches.Rectangle((bounding_boxes[index][0].item(), bounding_boxes[index][1].item()),
+                                     bounding_boxes[index][2].item() - bounding_boxes[index][0].item(),
+                                     bounding_boxes[index][3].item() - bounding_boxes[index][1].item(),
+                                     linewidth=1, edgecolor='r', facecolor='none')
+        else:
+            raise ValueError('Invalid mode')
+        ax.add_patch(rect)
+        # print the bounding box in the image
+        # ax.text(bounding_boxes[index][0].item(), bounding_boxes[index][1].item(), 'x1y1', color='red')
+        plt.show()
 

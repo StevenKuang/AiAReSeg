@@ -69,6 +69,9 @@ def run(settings):
     if settings.segmentation == False:
         objective = {'giou': giou_loss, 'l1': l1_loss, 'iou': nn.MSELoss()}
         loss_weight = {'giou': cfg.TRAIN.GIOU_WEIGHT, 'l1': cfg.TRAIN.L1_WEIGHT, 'iou': cfg.TRAIN.IOU_WEIGHT}
+    elif settings.unsupervised == True:
+        objective = {'reconstruction': nn.MSELoss()}
+        loss_weight = {'reconstruction': cfg.TRAIN.RECONSTRUCTION_WEIGHT}
     else:
         objective = {'BCE': nn.BCELoss(), 'mask_iou': DiceLoss(), 'MSE': nn.MSELoss()}
         loss_weight = {'BCE': cfg.TRAIN.BCE_MASK_WEIGHT, 'mask_iou': cfg.TRAIN.IOU_MASK_WEIGHT, 'MSE': cfg.TRAIN.MSE_MASK_WEIGHT}
@@ -77,7 +80,7 @@ def run(settings):
 
     # The actor carries out the actions of the AiA network, such as forward pass, calculate losses, then backprop and update with optimizer
     #actor = AIATRACKActor(net=net, objective=objective, loss_weight=loss_weight, settings=settings)
-    actor = AIARESEGActor(net=net, objective=objective, loss_weight=loss_weight, settings=settings)
+    actor = AIARESEGActor(net=net, objective=objective, loss_weight=loss_weight, settings=settings, cfg=cfg)
     # Optimizer, parameters, and learning rates
     optimizer, lr_scheduler = get_optimizer_scheduler(net, cfg)
 

@@ -63,7 +63,7 @@ Please ensure that your data is in the following format:
             |--Catheter-2
             ...
 
-Edit the **PATH** in ```lib/test/evaluation/local.py``` and ```lib/train/adim/local.py``` to the proper absolute path.
+Edit the **PATH** in ```lib/test/evaluation/local.py``` and ```lib/train/admin/local.py``` to the proper absolute path.
 
 ## Training:
 Please run the following command from ROOT:

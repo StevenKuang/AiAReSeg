@@ -2,6 +2,7 @@ import glob
 import os
 import traceback
 
+
 import torch
 from torch.utils.data.distributed import DistributedSampler
 
@@ -83,6 +84,8 @@ class BaseTrainer:
         for i in range(num_tries):
             try:
                 if load_latest:
+                    # self.load_checkpoint(checkpoint=self.settings.env.pretrained_networks)
+                    max_epochs = max_epochs + 500
                     self.load_checkpoint()
 
                     # Here, you may decide to remove some of the weights in the final layer in order to get better training performance via transfer learning
@@ -215,13 +218,25 @@ class BaseTrainer:
         # del checkpoint_dict['net']['iou_head.iou_predictor.weight']
         # del checkpoint_dict['net']['iou_head.iou_predictor.bias']
 
-        # TODO: Remove the weights on the decoder's second linear fully connected layer
+        # TODO: Remove the weights on the decoder's last few layers
 
-        # del checkpoint_dict['net']['transformer.decoder.layers.0.linear2.weight']
-        # del checkpoint_dict['net']['transformer.decoder.layers.0.linear2.bias']
+        del checkpoint_dict['net']['transformer.decoder.layers.0.linear1.weight']
+        del checkpoint_dict['net']['transformer.decoder.layers.0.linear1.bias']
+        del checkpoint_dict['net']['transformer.decoder.layers.0.norm1.weight']
+        del checkpoint_dict['net']['transformer.decoder.layers.0.norm1.bias']
+        del checkpoint_dict['net']['transformer.decoder.layers.0.norm2.weight']
+        del checkpoint_dict['net']['transformer.decoder.layers.0.norm2.bias']
+        del checkpoint_dict['net']['transformer.decoder.norm.weight']
+        del checkpoint_dict['net']['transformer.decoder.norm.bias']
+
+        # Remove all the weights on the segmentation head
+        for key in list(checkpoint_dict['net'].keys()):
+            if 'mask_head' in key:
+                del checkpoint_dict['net'][key]
 
         # TODO: Remove the weights on the tl and br layers
-
+        checkpoint_dict['net_type'] = "AIARESEG"
+        checkpoint_dict['actor_type'] = "AIARESEGActor"
         assert net_type == checkpoint_dict['net_type'], 'network is not of correct type'
 
         if fields is None:

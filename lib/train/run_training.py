@@ -3,6 +3,8 @@ import importlib
 import os
 import random
 import warnings
+import wandb
+import random
 
 warnings.filterwarnings('ignore')
 
@@ -13,9 +15,11 @@ import torch.distributed as dist
 
 torch.backends.cudnn.benchmark = False
 
-import _init_paths
+# import _init_paths
 import lib.train.admin.settings as ws_settings
 
+# profiling tools
+from ddtrace.profiling import Profiler
 
 
 
@@ -28,7 +32,7 @@ def init_seeds(seed):
     torch.backends.cudnn.benchmark = False
 
 
-def run_training(script_name, config_name, cudnn_benchmark=True, local_rank=-1, save_dir=None, base_seed=None, segmentation=False):
+def run_training(script_name, config_name, cudnn_benchmark=True, local_rank=-1, save_dir=None, base_seed=None, segmentation=False, unsupervised=False):
     """
     Run the train script.
 
@@ -60,7 +64,10 @@ def run_training(script_name, config_name, cudnn_benchmark=True, local_rank=-1, 
     settings.save_dir = os.path.abspath(save_dir)
     prj_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
     settings.cfg_file = os.path.join(prj_dir, 'experiments/%s/%s.yaml' % (script_name, config_name))
+    settings.unsupervised = unsupervised
     settings.segmentation = segmentation
+    if settings.unsupervised is True:
+        settings.segmentation = True
     expr_module = importlib.import_module('lib.train.train_script')
     expr_func = getattr(expr_module, 'run')
 
@@ -80,16 +87,35 @@ def main():
     parser.add_argument('--save_dir', type=str, default='.', help='the directory to save checkpoints and logs')
     parser.add_argument('--seed', type=int, default=32, help='seed for random numbers')
     parser.add_argument('--segmentation', type=bool, default=False, help='Turning on segmentation')
+    parser.add_argument('--unsupervised', type=bool, default=False, help='Turning on unsupervised learning using optical flow.')
     args = parser.parse_args()
     if args.local_rank != -1:
         dist.init_process_group(backend='nccl')
         torch.cuda.set_device(args.local_rank)
     else:
         torch.cuda.set_device(0)
+    use_wandb = False
+    if use_wandb:
+        wandb.init(
+            project="Unsupervised AiAReSeg",
+            config={
+                # "learning_rate": 0.02,
+                "architecture": "CNN+ViT",
+                "dataset": "CACTUSS transverse",
+                "epochs": 50,
+            }
+        )
     # Run training line
     run_training(args.script, args.config, cudnn_benchmark=args.cudnn_benchmark,
-                 local_rank=args.local_rank, save_dir=args.save_dir, base_seed=args.seed, segmentation=args.segmentation)
+                 local_rank=args.local_rank, save_dir=args.save_dir, base_seed=args.seed, segmentation=args.segmentation, unsupervised=args.unsupervised)
 
 
 if __name__ == '__main__':
+    # prof = Profiler(
+    #     env="prod",  # if not specified, falls back to environment variable DD_ENV
+    #     service="Unsup AiAReSeg",  # if not specified, falls back to environment variable DD_SERVICE
+    #     version="1.0.1",  # if not specified, falls back to environment variable DD_VERSION
+    # )
+    # prof.start()  # Should be as early as possible, eg before other imports, to ensure everything is profiled
+
     main()

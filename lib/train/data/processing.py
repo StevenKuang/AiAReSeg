@@ -5,6 +5,8 @@ from torchvision.ops import masks_to_boxes
 
 import lib.train.data.processing_utils as prutils
 from lib.utils import TensorDict
+from lib.train.data import flow_utils
+import lib.train.data.transforms as tfm
 
 # For debugging
 import matplotlib.pyplot as plt
@@ -506,3 +508,294 @@ class AIATRACKProcessingSeg(BaseProcessing):
         h = y2-y1
 
         return torch.tensor([x1,y1,w,h])
+
+class AIATRACKProcessingUnsupSeg(BaseProcessing):
+    def __init__(self,search_area_factor, center_jitter_factor, scale_jitter_factor, output_sz, mode='pair', settings=None, *args, **kwargs):
+        """
+        Args:
+            search_area_factor: The size of the search region  relative to the target size.
+            output_sz: An integer, denoting the size to which the search region is resized.
+                       The search region is always square.
+            center_jitter_factor: A dict containing the amount of jittering to be applied to the target center before
+                                  extracting the search region. See _get_jittered_box for how the jittering is done.
+            scale_jitter_factor: A dict containing the amount of jittering to be applied to the target size before
+                                 extracting the search region. See _get_jittered_box for how the jittering is done.
+            mode: Either 'pair' or 'sequence'. If mode='sequence', then output has an extra dimension for frames.
+        """
+
+        super().__init__(*args, **kwargs)
+
+        self.mode = mode
+        self.settings = settings
+        self.output_sz = output_sz
+        self.search_area_factor = search_area_factor
+
+        self.center_jitter_factor = center_jitter_factor
+        self.scale_jitter_factor = scale_jitter_factor
+
+
+    def __call__(self, data: TensorDict):
+        """
+        Args:
+            data: The input data, should contain the following fields:
+                  'reference_images', search_images', 'reference_flow', 'search_flow'
+
+        Returns:
+            TensorDict: Output data block with following fields:
+                        'reference_images', 'search_images', 'reference_flow', 'search_flow', 'test_proposals', 'proposal_iou'
+        """
+        # If we are using the catheter data, we need to convert the annotation into the catheter format
+
+
+        # temp = data['search_anno'][0]
+        # plt_tensor = temp.squeeze(0).repeat(3, 1, 1)
+        # plt_tensor = plt_tensor.permute(1, 2, 0).detach().cpu().numpy()
+        # plt_tensor = np.where(plt_tensor == 1, [255, 0, 0], 0).astype(float) / 255.0
+        #
+        # img = data['search_images'][0]
+        # output = img.astype(float) / 255.0
+        # img = output
+        # output = cv2.addWeighted(output, 1, plt_tensor, 0.5, 0)
+        #
+        # fig, axs = plt.subplots(1, 2)
+        # axs[0].imshow(img)
+        # axs[1].imshow(output)
+        # plt.show()
+        # # print('success')
+
+
+        # Apply joint transforms
+        if self.transform['joint'] is not None:
+            data['search_images'] = self.transform['joint'](image=data['search_images'])
+            data['reference_images'] = self.transform['joint'](image=data['reference_images'], new_roll=False)
+
+        for s in ['search', 'reference']:
+            # bounding_boxes = [self.x1y1x2y2_to_x1y1wh(prutils.flows_to_boxes(flow.unsqueeze(0))) for flow in data[s + '_flow']]
+            bounding_boxes = data[s + '_flow_bboxes']
+            # prutils.visualize_flow_bbox(bounding_boxes, data[s + '_flow'], 'xywh')
+
+            # just to make sure
+            for box in bounding_boxes:
+                if (box == 0).all():
+                    data['valid'] = False
+                    return data
+
+            if torch.any(torch.Tensor(list(data[s + '_flow'][0].shape[:2])).__reversed__() == (bounding_boxes[0][-2:] + 1)):
+                data['valid'] = False
+                return data
+
+            if s in ['reference']:
+                jittered_anno = [self._get_jittered_box(bounding_boxes[0], 'initial')]
+                for a in bounding_boxes[1:]:
+                    jittered_anno.append(self._get_jittered_box(a,s))
+            else:
+                jittered_anno = [self._get_jittered_box(a.squeeze(0), s) for a in bounding_boxes]
+
+            frames_resized, att_mask, gt_flow, data_invalid,_,_,_ = (
+                prutils.image_proc_unsup_seg(data[s + '_images'], flows = data[s + '_flow'],
+                                       jittered_boxes=jittered_anno, search_area_factor=self.search_area_factor[s],
+                                       output_sz=self.output_sz[s]))
+
+            for inva in data_invalid:
+                if inva == True:
+                    data['valid'] = False
+                    return data
+            data[s + '_images_o'] = [torch.tensor(ele).permute(2,0,1) for ele in frames_resized]
+
+            # # Apply transforms
+            # data[s + '_images'], data[s + '_flow'], data[s + '_att'] = self.transform[s](
+            #     image=frames_resized, flow=gt_flow, att=att_mask, joint=True)      # was False, why?
+            # # seems u and v in OF are flipped, flip them back
+            # data[s + '_flow'] = [torch.stack([data[s + '_flow'][i][:, :, 1], data[s + '_flow'][i][:, :, 0]], dim=2) for i in range(len(data[s + '_flow']))]
+
+            # what if no transform
+            mean = torch.tensor([0.485, 0.465, 0.406])
+            std = torch.tensor([0.229, 0.224, 0.225])
+            data[s + '_images'] = tfm.Transform(tfm.ToTensorAndJitter(0), tfm.Normalize(mean, std))(image=frames_resized, joint=True)
+            data[s + '_flow'], data[s + '_att'] = (
+                [torch.tensor(ele) for ele in gt_flow],
+                [torch.tensor(ele) for ele in att_mask])
+
+            # # plot the cropped flow
+            # for i in range(len(data[s + '_flow'])):
+            #
+            #     rgb_flow_b4 = torch.tensor(flow_utils.flow2img(gt_flow[i].cpu().numpy())).float() / 255.0
+            #     rgb_flow = torch.tensor(flow_utils.flow2img(data[s + '_flow'][i].cpu().numpy())).float() / 255.0
+            #     fig, ax = plt.subplots(2, 2)
+            #     ax[0][0].imshow(rgb_flow_b4)
+            #     ax[0][1].imshow(frames_resized[i])
+            #     ax[1][0].imshow(rgb_flow)
+            #     ax[1][1].imshow(data[s + '_images'][i].permute(1, 2, 0).cpu().numpy())
+            #     plt.show()
+
+            # Draw the transform out and see how it looks like
+            # ax = plt.gca()
+            # plt.imshow(data['search_images'][0])
+            # ax.add_patch(plt.Rectangle((data['search_anno'][0][0], data['search_anno'][0][1]), data['search_anno'][0][2], data['search_anno'][0][3], fill=False, color = [0.000, 0.447, 0.741], linewidth=3))
+            # plt.show()
+
+            if s in ['reference']:
+                feat_size = self.output_sz[s] // 16
+                data[s + '_region'] = []
+                for i in range(len(data[s + '_flow'])):
+                    flow = data[s + '_flow'][i]
+                    # create a binary mask from flow
+                    threshold = 0.2
+                    mask_u = flow.abs()[:, :, 0] > threshold
+                    mask_v = flow.abs()[:, :, 1] > threshold
+                    target_region = (mask_u | mask_v).float().unsqueeze(0).unsqueeze(0)
+
+                    # # debug
+                    # # visualize the binary mask for debugging, if true then white else black
+                    # ori_img = data[s + '_images_o'][i]
+                    # rgb_mask = torch.cat([target_region.squeeze(0), target_region.squeeze(0), target_region.squeeze(0)], dim=0).permute(1, 2, 0).cpu().numpy() * 255
+                    # rgb_flow = torch.tensor(flow_utils.flow2img(flow.cpu().numpy())).float() / 255.0
+                    # fig, axs = plt.subplots(1, 3)
+                    # axs[0].imshow(rgb_mask)
+                    # axs[1].imshow(rgb_flow)
+                    # axs[2].imshow(ori_img.permute(1, 2, 0).cpu().numpy())
+                    # plt.show()
+
+                    target_region = torch.nn.functional.interpolate(target_region, size=(feat_size,feat_size), mode='bilinear', align_corners=False)
+                    target_region = target_region.view(feat_size * feat_size, -1)
+                    background_region = 1 - target_region
+                    data[s + '_region'].append(torch.cat([target_region, background_region], dim=1))
+
+            # TODO: Double check what is going on here
+            # Check whether elements in data[s + '_att'] is all 1
+            # Which means all of elements are padded
+            # Note that type of data[s + '_att'] is tuple, type of ele is torch.tensor
+            for ele in data[s + '_att']:
+                if (ele == 1).all():
+                    data['valid'] = False
+                    # print('values of original attention mask are all one, replace it with new data')
+                    return data
+            # More strict conditions: require the down-sampled masks not to be all 1
+            for ele in data[s + '_att']:
+                feat_size = self.output_sz[s] // 16  # 16 is the backbone stride
+                # (1,1,128,128) (1,1,256,256) --> (1,1,8,8) (1,1,16,16)
+                mask_down = F.interpolate(ele[None, None].float(), size=feat_size).to(torch.bool)[0]
+                if (mask_down == 1).all():
+                    data['valid'] = False
+                    # print('values of down-sampled attention mask are all one, replace it with new data')
+                    return data
+
+        # # Generate proposals, only for detection tasks
+        # iou_proposals, gt_iou = zip(*[self._generate_proposals(a) for a in data['search_anno']])
+        # data['search_proposals'] = list(iou_proposals)
+        # data['proposal_iou'] = list(gt_iou)
+
+        data['valid'] = True
+
+        # Prepare output
+        if self.mode == 'sequence':
+            data = data.apply(stack_tensors)
+        else:
+            data = data.apply(lambda x: x[0] if isinstance(x, list) else x)
+        # Have a look at what is happening here for each element of the
+        return data
+
+    def generate_bboxes(self,mask):
+        # Generating bounding boxes from the segmentation mask for cropping
+        non_zero_indices = torch.where(mask)
+
+        min_row = torch.min(non_zero_indices[0])
+        min_col = torch.min(non_zero_indices[1])
+        max_row = torch.max(non_zero_indices[0])
+        max_col = torch.max(non_zero_indices[1])
+
+        bounding_box = torch.tensor([min_row,min_col,max_row,max_col])
+
+        return bounding_box
+
+    def perform_cropping(self, im, seg_mask, target_bb, search_area_factor, output_sz=None):
+        # We want to crop the image and the mask
+
+        if not isinstance(target_bb, list):
+            x, y, w, h = target_bb.tolist()
+        else:
+            x, y, w, h = target_bb
+
+        # Crop image
+        crop_sz = torch.ceil(torch.sqrt(w * h) * search_area_factor)
+
+        if crop_sz < 1:
+            raise Exception('ERROR: too small bounding box')
+
+        x1 = round(x + 0.5 * w - crop_sz * 0.5)
+        x2 = x1 + crop_sz
+
+        y1 = round(y + 0.5 * h - crop_sz * 0.5)
+        y2 = y1 + crop_sz
+
+        x1_pad = max(0, -x1)
+        x2_pad = max(x2 - im.shape[1] + 1, 0)
+
+        y1_pad = max(0, -y1)
+        y2_pad = max(y2 - im.shape[0] + 1, 0)
+
+        # Crop target
+        im_crop = im[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]
+
+        # Crop the target mask as well
+        im_mask_crop = seg_mask[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]
+
+
+        # Pad
+        im_crop_padded = torch.nn.functional.pad(im_crop,(y1_pad, y2_pad, x1_pad, x2_pad), value=0)
+
+        # Pad the mask
+        mask_crop_padded = torch.nn.functional.pad(im_mask_crop, (y1_pad, y2_pad, x1_pad, x2_pad), value=0)
+
+
+        # TODO:
+        # Deal with attention mask
+        H, W, _ = im_crop_padded.shape
+        att_mask = np.ones((H, W))
+        end_x, end_y = -x2_pad, -y2_pad
+        if y2_pad == 0:
+            end_y = None
+        if x2_pad == 0:
+            end_x = None
+        att_mask[y1_pad:end_y, x1_pad:end_x] = 0
+
+        if output_sz is not None:
+            resize_factor = output_sz / crop_sz
+            im_crop_padded = torch.nn.functional.interpolate(im_crop_padded, size=(output_sz, output_sz), mode='bilinear',
+                                            align_corners=False)
+            mask_crop_padded = torch.nn.functional.interpolate(mask_crop_padded, size=(output_sz, output_sz), mode='bilinear',
+                                            align_corners=False)
+            att_mask = torch.nn.functional.interpolate(att_mask, size=(output_sz, output_sz), mode='bilinear',
+                                            align_corners=False)
+            return im_crop_padded, mask_crop_padded, resize_factor, att_mask
+        else:
+            return im_crop_padded, att_mask.astype(np.bool_), 1.0
+
+    def _get_jittered_box(self, box, mode):
+        """
+        Jitter the input box.
+
+        Args:
+            box: Input bounding box.
+            mode: String 'reference' or 'search' indicating reference or search data.
+
+        Returns:
+            torch.Tensor: Jittered box.
+        """
+
+        noise = torch.exp(torch.randn(2) * self.scale_jitter_factor[mode])
+        jittered_size = box[2:4] * noise
+        max_offset = (jittered_size.prod().sqrt() * torch.tensor(self.center_jitter_factor[mode]).float())
+        jittered_center = box[0:2] + 0.5 * box[2:4] + max_offset * (torch.rand(2) - 0.5)
+
+        return torch.cat((jittered_center - 0.5 * jittered_size, jittered_size), dim=0)
+
+    def x1y1x2y2_to_x1y1wh(self, bbox):
+
+        # Convert to the standard format
+
+        x1, y1, x2, y2 = bbox.tolist()
+        w = x2-x1
+        h = y2-y1
+
+        return torch.tensor([x1, y1, w, h])
