@@ -34,6 +34,7 @@ cfg.MODEL.AIA.FEAT_SIZE = 400
 
 # TRAIN
 cfg.TRAIN = edict()
+cfg.TRAIN.RESUME = False
 cfg.TRAIN.LR = 0.0001           # 0.0001
 cfg.TRAIN.WEIGHT_DECAY = 0.0001
 cfg.TRAIN.EPOCH = 500

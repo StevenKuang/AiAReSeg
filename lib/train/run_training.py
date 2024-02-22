@@ -94,18 +94,18 @@ def main():
         torch.cuda.set_device(args.local_rank)
     else:
         torch.cuda.set_device(0)
-    use_wandb = True
-    if use_wandb:
-        wandb.init(
-            project="Unsupervised AiAReSeg",
-            config={
-                # "learning_rate": 0.02,
-                "architecture": "CNN+ViT",
-                "dataset": "CACTUSS transverse",
-                "epochs": 50,
-                "mode": "disabled"
-            }
-        )
+
+    wandb.init(
+        project="Unsupervised AiAReSeg",
+        config={
+            # "learning_rate": 0.02,
+            "architecture": "CNN+ViT",
+            "dataset": "CACTUSS transverse",
+            "epochs": 50,
+        }, mode="online"
+        # }, mode="disabled"
+    )
+
     # Run training line
     run_training(args.script, args.config, cudnn_benchmark=args.cudnn_benchmark,
                  local_rank=args.local_rank, save_dir=args.save_dir, base_seed=args.seed, segmentation=args.segmentation, unsupervised=args.unsupervised)

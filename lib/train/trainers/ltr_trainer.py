@@ -74,6 +74,7 @@ class LTRTrainer(BaseTrainer):
             data['settings'] = self.settings
             # Forward pass
             # with torch.autograd.detect_anomaly():
+
             loss, stats = self.actor(data)
 
             # print([param.requires_grad for param incnet.parameters()])
@@ -82,11 +83,15 @@ class LTRTrainer(BaseTrainer):
                 self.optimizer.zero_grad()
                 loss.backward()
 
-                # # np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
+                # for tag, value in self.actor.net.named_parameters():
+                #     if value.grad is not None:
+                #         print(value.grad.cpu())
+
+
                 # # monitor gradients before clipping
                 # gradients = np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
                 # print(f'Mean gradient norm before clip: {np.mean(gradients)}')
-                # # np.mean(np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None]))
+
 
                 if self.settings.grad_clip_norm > 0:
                     torch.nn.utils.clip_grad_norm_(self.actor.net.parameters(), self.settings.grad_clip_norm)

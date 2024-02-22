@@ -243,12 +243,25 @@ class DoubleConv2d(nn.Module):
                 nn.Conv2d(in_channels, features, kernel_size=3, padding=1),
                 nn.BatchNorm2d(features),
                 #nn.GroupNorm(num_groups=int(features/16), num_channels=features),
-                nn.ReLU(inplace=True),
+                # nn.ReLU(inplace=True),
+                nn.LeakyReLU(inplace=True),
                 nn.Conv2d(features, features, kernel_size=3, padding=1),
                 nn.BatchNorm2d(features),
                 #nn.GroupNorm(num_groups=int(features/16), num_channels=features),
-                nn.ReLU(inplace=True)
+                # nn.ReLU(inplace=True)
+                nn.LeakyReLU(inplace=True)
                 )
+        # self.apply(self.init_weights)
+
+    def init_weights(self, m):
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear) or isinstance(m,
+                                                                                                                   nn.ConvTranspose3d):
+            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='leaky_relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm3d):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
 
     def forward(self,x):
         return self.block(x)
@@ -259,7 +272,8 @@ class deconv3d(nn.Module):
         self.block = nn.Sequential(
             nn.ConvTranspose3d(in_channels,out_channels, kernel_size=(2,2,2), stride=(1,2,2), padding=(1,0,0)),
             nn.BatchNorm3d(out_channels),
-            nn.ReLU(inplace=True)
+            # nn.ReLU(inplace=True)
+            nn.LeakyReLU(inplace=True)
         )
     def forward(self,x):
         return self.block(x)
@@ -271,8 +285,20 @@ class deconv3d_4C(nn.Module):
         self.block = nn.Sequential(
             nn.ConvTranspose3d(in_channels, out_channels, kernel_size=(4,2,2), stride=(1,2,2), padding=(3,0,0)),
             nn.BatchNorm3d(out_channels),
-            nn.ReLU(inplace=True)
+            # nn.ReLU(inplace=True)
+            nn.LeakyReLU(inplace=True)
         )
+        # self.apply(self.init_weights)
+
+    def init_weights(self, m):
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear) or isinstance(m, nn.ConvTranspose3d):
+            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='leaky_relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm3d):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
+
     def forward(self,x):
         return self.block(x)
 
@@ -406,19 +432,34 @@ class AiAReSeg_w_temp(nn.Module):
         self.d52 = DoubleConv2d(self.in_dim//128, self.in_dim//256)   # 2 -> 1
         self.d53 = nn.Conv2d(in_channels=1,out_channels=1, kernel_size=1,stride=1,padding=0) # 1 x 1 conv
 
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear) or isinstance(m, nn.ConvTranspose3d):
-                nn.init.kaiming_normal_(m.weight.data, mode='fan_in')
-                if m.bias is not None:
-                    m.bias.data.zero_()
-            elif isinstance(m, nn.BatchNorm2d):
-                # In earlier versions batch norm parameters was initialized with default initialization
-                # Which changed in pytorch 1.2. In 1.1 and earlier the weight was set to U(0,1)
-                # So we use the same initialization here
-                # m.weight.data.fill_(1)
-                m.weight.data.uniform_()
-                m.bias.data.zero_()
+        # self.apply(self.init_weights)
 
+
+
+
+        # for m in self.modules():
+        #     if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear) or isinstance(m, nn.ConvTranspose3d)\
+        #             or isinstance(m, DoubleConv2d) or isinstance(m, deconv3d_4C):
+        #         nn.init.kaiming_normal_(m.weight.data, mode='fan_in')
+        #         if m.bias is not None:
+        #             m.bias.data.zero_()
+        #     elif isinstance(m, nn.BatchNorm2d):
+        #         # In earlier versions batch norm parameters was initialized with default initialization
+        #         # Which changed in pytorch 1.2. In 1.1 and earlier the weight was set to U(0,1)
+        #         # So we use the same initialization here
+        #         # m.weight.data.fill_(1)
+        #         m.weight.data.uniform_()
+        #         m.bias.data.zero_()
+
+    def init_weights(self, m):
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear) or isinstance(m,
+                                                                                                                   nn.ConvTranspose3d):
+            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='leaky_relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm3d):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
 
     def forward(self,embedding, search_outputs, reference_outputs):
 
@@ -521,3 +562,5 @@ def build_segmentation_head(cfg):
     seg_head = AiAReSeg_w_temp(dim=hidden_dim, embed_size=embed_size, feature_size=feature_size)
 
     return seg_head
+
+

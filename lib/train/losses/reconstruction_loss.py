@@ -46,31 +46,32 @@ class ReconstructionLoss:
 
         if self.cfg.GWM.FLOW_RES is not None:
             if flow.shape[-2:] != mask_softmaxed.shape[-2:]:
-                # logger.debug_once(f'Resizing predicted masks to {self.cfg.GWM.FLOW_RES}')
+                print(f'Resizing predicted masks to {self.cfg.GWM.FLOW_RES}')
                 mask_softmaxed = F.interpolate(mask_softmaxed, flow.shape[-2:], mode='bilinear', align_corners=False)
 
         rec_flows = self.rec_flow(sample, flow, mask_softmaxed)
 
         if self.l1_optimize:
             self._extra_losses.extend([nn.L1Loss()(flow, rec_flow) for rec_flow in rec_flows])
+
         if not isinstance(rec_flows, (list, tuple)):
             rec_flows = (rec_flows,)
-        # rec_flows = rec_flows[0]
+
         k = len(rec_flows)
-        # losses = [self.criterion(flow[i], rec_flows[i]) for i in range(k)]
-        # loss = sum(losses) / k
         loss = sum(self.criterion(flow, rec_flow) / k for rec_flow in rec_flows)
         wandb.log({"rec_mse_loss": loss.item()})
         if isinstance(sum(self._extra_losses, 0.), torch.Tensor):
             wandb.log({"rec_l1_loss": sum(self._extra_losses, 0.).item() / len(self._extra_losses)})
+
         if len(self._extra_losses):
             loss = loss * self.mse_weight + sum(self._extra_losses, 0.) / len(self._extra_losses) * self.l1_weight
         self._extra_losses = []
+
         wandb.log({"rec_loss": loss.item()})
 
         # # visualize the rec_flow
-        # for i in range(len(rec_flows)):
-        #     rec_flow = rec_flows[i]
+        # for i in range(len(rec_flows[0])):
+        #     rec_flow = rec_flows[0][i]
         #     mask_bin = mask_softmaxed[i]
         #     flow_orig = flow[i]
         #     rgb_mask = torch.stack([mask_bin, mask_bin, mask_bin], 0).squeeze(1).detach().permute(1, 2,
@@ -84,14 +85,14 @@ class ReconstructionLoss:
         #     ax[1].imshow(rgb_rec_flow)
         #     ax[2].imshow(rgb_orig_flow)
         #     # add caption to fig
-        #     fig.suptitle(f"rec loss:" + str(losses[i].item()))
-        #     # plt.show()
-        #     wandb.log({"rec_flow_viz": [wandb.Image(fig, caption="rec_flow_viz")]})
+        #     # fig.suptitle(f"rec loss:" + str(losses[i].item()))
+        #     plt.show()
+        #     # wandb.log({"rec_flow_viz": [wandb.Image(fig, caption="rec_flow_viz")]})
         self.it = self.it + 1
         return loss
 
     def flow_quad(self, sample, flow, masks_softmaxed, it, **_):
-        # logger.debug_once(f'Reconstruction using quadratic. Masks shape {masks_softmaxed.shape} | '
+        # print(f'Reconstruction using quadratic. Masks shape {masks_softmaxed.shape} | '
         #                   f'Flow shape {flow.shape} | '
         #                   f'Grid shape {self.grid_x.shape, self.grid_y.shape}')
         return flow_reconstruction.get_quad_flow(masks_softmaxed, flow, self.grid_x, self.grid_y)
@@ -106,7 +107,7 @@ class ReconstructionLoss:
     def rec_flow(self, sample, flow, masks_softmaxed):
         it = self.it
         if self.cfg.GWM.FLOW_RES is not None and flow.shape[-2:] != self.grid_x.shape[-2:]:
-            # logger.debug_once(f'Generating new grid predicted masks of {flow.shape[-2:]}')
+            # print(f'Generating new grid predicted masks of {flow.shape[-2:]}')
             self.grid_x, self.grid_y = get_meshgrid(flow.shape[-2:], self.device)
         return [self._clipped_recon_fn(sample, flow, masks_softmaxed, it)]
 

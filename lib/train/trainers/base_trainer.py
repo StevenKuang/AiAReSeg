@@ -220,21 +220,21 @@ class BaseTrainer:
         # del checkpoint_dict['net']['iou_head.iou_predictor.weight']
         # del checkpoint_dict['net']['iou_head.iou_predictor.bias']
 
-        # TODO: Remove the weights on the decoder's last few layers
+        if not self.cfg.TRAIN.RESUME:
+            # TODO: Remove the weights on the decoder's last few layers
+            del checkpoint_dict['net']['transformer.decoder.layers.0.linear1.weight']
+            del checkpoint_dict['net']['transformer.decoder.layers.0.linear1.bias']
+            del checkpoint_dict['net']['transformer.decoder.layers.0.norm1.weight']
+            del checkpoint_dict['net']['transformer.decoder.layers.0.norm1.bias']
+            del checkpoint_dict['net']['transformer.decoder.layers.0.norm2.weight']
+            del checkpoint_dict['net']['transformer.decoder.layers.0.norm2.bias']
+            del checkpoint_dict['net']['transformer.decoder.norm.weight']
+            del checkpoint_dict['net']['transformer.decoder.norm.bias']
 
-        del checkpoint_dict['net']['transformer.decoder.layers.0.linear1.weight']
-        del checkpoint_dict['net']['transformer.decoder.layers.0.linear1.bias']
-        del checkpoint_dict['net']['transformer.decoder.layers.0.norm1.weight']
-        del checkpoint_dict['net']['transformer.decoder.layers.0.norm1.bias']
-        del checkpoint_dict['net']['transformer.decoder.layers.0.norm2.weight']
-        del checkpoint_dict['net']['transformer.decoder.layers.0.norm2.bias']
-        del checkpoint_dict['net']['transformer.decoder.norm.weight']
-        del checkpoint_dict['net']['transformer.decoder.norm.bias']
-
-        # Remove all the weights on the segmentation head
-        for key in list(checkpoint_dict['net'].keys()):
-            if 'mask_head' in key:
-                del checkpoint_dict['net'][key]
+            # Remove all the weights on the segmentation head
+            for key in list(checkpoint_dict['net'].keys()):
+                if 'mask_head' in key:
+                    del checkpoint_dict['net'][key]
 
         # TODO: Remove the weights on the tl and br layers
         checkpoint_dict['net_type'] = "AIARESEG"

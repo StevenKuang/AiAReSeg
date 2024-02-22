@@ -44,7 +44,7 @@ class AIARESEGActor(BaseActor):
         self.cfg = cfg
         self.device = torch.device('cuda:0')
         if 'reconstruction' in self.objective:
-            self.objective = {'reconstruction': losses.ReconstructionLoss(self.cfg, self)}
+            self.objective['reconstruction'] = losses.ReconstructionLoss(self.cfg, self)
         # Register a hook for each layer
         # for name, layer in self.net.named_children():
         #     layer.__name__ = name
@@ -73,6 +73,7 @@ class AIARESEGActor(BaseActor):
         if self.settings.segmentation:
             if self.settings.unsupervised:
                 loss, status = self.compute_losses_flow_seg(out_dict, data, return_status=True)
+                wandb.log(status)
                 return loss, status
             else:
                 gt_anno = data['search_anno'].squeeze(2).squeeze(2).permute(1,0,2,3)
@@ -301,32 +302,33 @@ class AIARESEGActor(BaseActor):
                       'Ls/bce': bce_loss.item(),
                       'Ls/iou': IOU_loss.item(),
                       'Ls/mse': mse.item()}
-            wandb.log(status)
             return loss, status
         else:
             return loss
     def compute_losses_flow_seg(self,out_seg, data, return_status=True):
         """optical flow reconstruction loss from the guess what moves model"""
-        if not self.cfg.TRAIN.USE_RECONSTRUCTION:
-            flow = data['search_flow'][0]
-            # create a binary mask from flow
-            threshold = 0.2
-            mask_u = flow.abs()[:, :, :, 0] > threshold
-            mask_v = flow.abs()[:, :, :, 1] > threshold
-            mask_from_flow = (mask_u | mask_v).float().unsqueeze(1)
 
-            # # debug
-            # # visualize the binary mask for debugging, if true then white else black
-            # ori_img = data['search_images'][0]
-            # rgb_mask = torch.cat([mask_from_flow.squeeze(0), mask_from_flow.squeeze(0), mask_from_flow.squeeze(0)], dim=0).permute(1, 2, 0).cpu().numpy() * 255
-            # rgb_flow = torch.tensor(flow_utils.flow2img(flow.cpu().numpy())).float() / 255.0
-            # fig, axs = plt.subplots(1, 3)
-            # axs[0].imshow(rgb_mask)
-            # axs[1].imshow(rgb_flow)
-            # axs[2].imshow(ori_img.permute(1, 2, 0).cpu().numpy())
-            # plt.show()
+        flow = data['search_flow'][0]
+        # create a binary mask from flow
+        threshold = 0.2
+        mask_u = flow.abs()[:, :, :, 0] > threshold
+        mask_v = flow.abs()[:, :, :, 1] > threshold
+        mask_from_flow = (mask_u | mask_v).float().unsqueeze(1)
 
-            return self.compute_losses_seg(out_seg, mask_from_flow, return_status)
+        # # debug
+        # # visualize the binary mask for debugging, if true then white else black
+        # ori_img = data['search_images'][0]
+        # rgb_mask = torch.cat([mask_from_flow.squeeze(0), mask_from_flow.squeeze(0), mask_from_flow.squeeze(0)], dim=0).permute(1, 2, 0).cpu().numpy() * 255
+        # rgb_flow = torch.tensor(flow_utils.flow2img(flow.cpu().numpy())).float() / 255.0
+        # fig, axs = plt.subplots(1, 3)
+        # axs[0].imshow(rgb_mask)
+        # axs[1].imshow(rgb_flow)
+        # axs[2].imshow(ori_img.permute(1, 2, 0).cpu().numpy())
+        # plt.show()
+        if self.cfg.TRAIN.USE_RECONSTRUCTION <= 1:
+            loss, status = self.compute_losses_seg(out_seg, mask_from_flow, return_status)
+            if self.cfg.TRAIN.USE_RECONSTRUCTION < 1:
+                return loss, status
 
         # visualized gt_flow is a tensor of shape (1, B, 2, H, W)
         # gt_flow and out_seg_softmax must be of the same shape
@@ -342,17 +344,33 @@ class AIARESEGActor(BaseActor):
         sample = None
         iteration = 0
 
-        threshold = 0.5
-        out_seg = out_seg > threshold
-        out_seg = out_seg.float()
-        out_seg = torch.tensor(out_seg,requires_grad=True)
+        threshold = torch.tensor(0.5, requires_grad=True).cuda()
+        beta = torch.tensor(10.0, requires_grad=True).cuda()  # Controls steepness of sigmoid, adjust as needed
 
-        out_seg_softmax = torch.softmax(out_seg, dim=3)
-        rec_loss = self.objective['reconstruction'](sample, gt_flow, out_seg_softmax, iteration, train=True)
+        # Apply sigmoid to out_seg
+        # This maps values to (0, 1), with a steep transition around the threshold
+        # out_seg_sigmoid = torch.sigmoid(beta * (out_seg - threshold))
+        # out_seg_softmax = torch.softmax(out_seg, dim=1) # not sure which dimension to softmax over
+        # out_seg = out_seg > threshold
+        # out_seg = out_seg.float()
+        # out_seg = torch.tensor(out_seg,requires_grad=True)
+        # out_seg_softmax = torch.softmax(out_seg, dim=3)
 
+        rec_loss = self.objective['reconstruction'](sample, gt_flow, out_seg, iteration, train=True)
+
+        if self.cfg.TRAIN.USE_RECONSTRUCTION > 1:
+            if return_status:
+                status = {
+                    'Ls/total': rec_loss.item(),
+                    'Ls/reconstruction': rec_loss.item()
+                }
+
+                return rec_loss, status
+            else:
+                return rec_loss
         # wandb.log({"Per Sequence Reconstruction Loss": reconstruction_loss})
-        print(f"Reconstruction loss: {rec_loss}")
-        loss = rec_loss * self.loss_weight['reconstruction']
+        # print(f"Reconstruction loss: {rec_loss}")
+        loss = rec_loss * self.loss_weight['reconstruction'] + loss
         # bce_loss = self.objective['BCE'](out_seg,gt_flow)
         # try:
         #     IOU_loss = self.objective['mask_iou'](out_seg, gt_flow)
@@ -365,8 +383,8 @@ class AIARESEGActor(BaseActor):
         # loss = self.loss_weight['BCE'] * bce_loss + self.loss_weight['mask_iou'] * IOU_loss + self.loss_weight['MSE'] * mse
 
         if return_status:
-            status = {'Ls/total': loss.item(),
-                      'Ls/reconstruction': rec_loss.item()}
+            status['Ls/total'] = loss.item()
+            status['Ls/reconstruction'] = rec_loss.item()
 
             return loss, status
         else:
