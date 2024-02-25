@@ -102,8 +102,8 @@ def main():
             "architecture": "CNN+ViT",
             "dataset": "CACTUSS transverse",
             "epochs": 50,
-        # }, mode="online"
-        }, mode="disabled"
+        }, mode="online"
+        # }, mode="disabled"
     )
 
     # Run training line

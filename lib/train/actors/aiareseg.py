@@ -110,42 +110,42 @@ class AIARESEGActor(BaseActor):
             search_dict = merge_feature_sequence(search_dict_list)
 
             #########Plotting attention maps for debugging##########
-            # We plot the original, and then all of the attention maps in subsequent layers
-
-            # Denorm
-            search_img_copy = search_img.permute(0, 2, 3, 1).detach().cpu()  # (b,320,320,3)
-            mean = torch.tensor([0.485, 0.465, 0.406])
-            std = torch.tensor([0.229, 0.224, 0.225])
-            search_img_denorm = (search_img_copy * std) + mean
-
-            copy_src = search_dict['feat']
-            copy_src = copy_src.permute(1, 2, 0).view(-1, 256, 20, 20)
-            # gt_flow = data['search_flow'].squeeze(0).permute(0, 3, 1, 2)
-
-            for i in range(copy_src.shape[0]):
-                plot_img = copy_src[i, 0,...].detach().cpu().numpy().astype(float)
-                min_val = np.min(plot_img)
-                max_val = np.max(plot_img)
-
-                new_min = 0.0
-                new_max = 1.0
-
-                plot_img_transformed = new_min + ((plot_img - min_val) * (new_max - new_min)) / (max_val - min_val)
-                search_img_plot = search_img_denorm[i, ...].numpy()
-                # rgb_flow = torch.tensor(flow_utils.flow2img(gt_flow[i].permute(1,2,0).cpu().numpy())).float() / 255.0
-
-                fig, ax = plt.subplots(1, 2)
-                ax[0].imshow(search_img_plot)
-                # ax[0].set_title('Cropped denormalized search image')
-                ax[0].set_title('Cropped search image')
-                # plt.show()
-
-                ax[1].imshow(plot_img_transformed)
-                ax[1].set_title('Attention map')
-
-                # ax[2].imshow(rgb_flow)
-                # ax[2].set_title('gt flow')
-                plt.show()
+            # # We plot the original, and then all of the attention maps in subsequent layers
+            #
+            # # Denorm
+            # search_img_copy = search_img.permute(0, 2, 3, 1).detach().cpu()  # (b,320,320,3)
+            # mean = torch.tensor([0.485, 0.465, 0.406])
+            # std = torch.tensor([0.229, 0.224, 0.225])
+            # search_img_denorm = (search_img_copy * std) + mean
+            #
+            # copy_src = search_dict['feat']
+            # copy_src = copy_src.permute(1, 2, 0).view(-1, 256, 20, 20)
+            # # gt_flow = data['search_flow'].squeeze(0).permute(0, 3, 1, 2)
+            #
+            # for i in range(copy_src.shape[0]):
+            #     plot_img = copy_src[i, 0,...].detach().cpu().numpy().astype(float)
+            #     min_val = np.min(plot_img)
+            #     max_val = np.max(plot_img)
+            #
+            #     new_min = 0.0
+            #     new_max = 1.0
+            #
+            #     plot_img_transformed = new_min + ((plot_img - min_val) * (new_max - new_min)) / (max_val - min_val)
+            #     search_img_plot = search_img_denorm[i, ...].numpy()
+            #     # rgb_flow = torch.tensor(flow_utils.flow2img(gt_flow[i].permute(1,2,0).cpu().numpy())).float() / 255.0
+            #
+            #     fig, ax = plt.subplots(1, 2)
+            #     ax[0].imshow(search_img_plot)
+            #     # ax[0].set_title('Cropped denormalized search image')
+            #     ax[0].set_title('Cropped search image')
+            #     # plt.show()
+            #
+            #     ax[1].imshow(plot_img_transformed)
+            #     ax[1].set_title('Attention map')
+            #
+            #     # ax[2].imshow(rgb_flow)
+            #     # ax[2].set_title('gt flow')
+            #     plt.show()
 
             #########Plotting for debugging##########
 
