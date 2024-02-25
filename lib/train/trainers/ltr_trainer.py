@@ -88,7 +88,7 @@ class LTRTrainer(BaseTrainer):
                 #         print(value.grad.cpu())
 
 
-                # # monitor gradients before clipping
+                # monitor gradients before clipping
                 # gradients = np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
                 # print(f'Mean gradient norm before clip: {np.mean(gradients)}')
 
@@ -96,7 +96,7 @@ class LTRTrainer(BaseTrainer):
                 if self.settings.grad_clip_norm > 0:
                     torch.nn.utils.clip_grad_norm_(self.actor.net.parameters(), self.settings.grad_clip_norm)
 
-                # # monitor gradients
+                # monitor gradients
                 # gradients = np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
                 # print(f'Mean gradient norm: {np.mean(gradients)}')
                 # wandb.log({'mean_gradient_norm': np.mean(gradients)})
@@ -111,8 +111,13 @@ class LTRTrainer(BaseTrainer):
             self._print_stats(i, loader, batch_size)
 
             avg_epoch_loss += loss.item()
+        log_epoch = self.epoch
+        if self.epoch >= 500:
+            log_epoch = self.epoch - 500
+        wandb.log({'epoch_loss': avg_epoch_loss / limit,
+                   'epoch': log_epoch,
+                   'learning_rate': self.optimizer.param_groups[0]['lr']})
 
-        wandb.log({'epoch_loss': avg_epoch_loss / limit})
     def train_epoch(self):
         """
         Do one epoch for each loader.

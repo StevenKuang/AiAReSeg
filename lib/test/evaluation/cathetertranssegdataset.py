@@ -4,7 +4,9 @@ from lib.test.utils.load_text import load_text
 import os
 import torch
 import cv2
-
+from os.path import join
+from glob import glob
+from lib.train.data import flow_utils
 
 class CatheterTransSegDataset(BaseDataset):
     """
@@ -18,22 +20,49 @@ class CatheterTransSegDataset(BaseDataset):
 
     def __init__(self, subset='Val'):
         super().__init__()
-        self.base_path = self.env_settings.catheterseg_path
+        self.base_path = self.env_settings.cathetertransseg_path
         print("Catheter Base Path:")
         print(self.base_path)
-        self.base_path = os.path.join(self.base_path, 'Images', subset)
-        self.data_path = self.env_settings.catheterseg_path
+        self.simu_list, self.trim_rule = [], []
+        if subset == 'Train':
+            self.simu_list = ["01", "21", "09", "29"]
+            self.trim_rule = [30, 40, 30, 15]
+        elif subset == 'Val':
+            self.simu_list = ["31"]
+            self.trim_rule = [44]
+            # self.simu_list = ["21"]
+            # self.trim_rule = [0]
+        else:
+            AttributeError("The mode is not recognized")
 
-        self.sequence_list = self._get_sequence_list(subset)
+        roots = []
+        self.bboxes_dic = {}
+        for i in range(len(self.simu_list)):
+            simu = self.simu_list[i]
+            curr_root = join(self.base_path, "rotations_transverse_" + simu + '/')
+            roots.append(curr_root)
+            bbox_file = join(curr_root, "bboxes.pt")
+            if os.path.exists(bbox_file):
+                self.bboxes_dic[simu] = torch.load(bbox_file).to('cpu')
+            else:
+                raise FileNotFoundError("The bbox file " + bbox_file + " does not exist")
 
-        self.clean_list = self.clean_seq_list()
+        self.base_path = roots[0]
+        self.data_path = self.env_settings.cathetertransseg_path
+
+        self.sequence_list = self._get_sequence_list(subset, roots, self.trim_rule)
+        self.height = 320
+        self.width = 320
+        self._set_height_width()
+        self.clean_list = self.clean_seq_list()     # not used anywhere
+
 
     # A clean sequence list method that grabs the class of each sequence, in our case there is only one class
 
     def clean_seq_list(self):
         clean_lst = []
         for i in range(len(self.sequence_list)):
-            cls, _ = self.sequence_list[i].split('-')
+            cls, _ = self.sequence_list[i].split('_')[-1]
             clean_lst.append(cls)
 
         return clean_lst
@@ -44,20 +73,34 @@ class CatheterTransSegDataset(BaseDataset):
         parts = name.split("-")
         return int(parts[1])
 
-    def _get_sequence_list(self,subset):
+    def _get_sequence_list(self,subset, roots, trim_rule):
         if subset == 'Val':
             # We grab all of the sequences in the folder by doing a walk
             seq_list = []
-            for names, subdires, files in os.walk(os.path.join(self.base_path, "Catheter")):
+            for i in range(len(roots)):
+                root = roots[i]
+                trim = trim_rule[i]
+                image_root = join(root, 'filtered')
+                subfolders = sorted(glob(join(image_root, '*')))
+                for j in range(len(subfolders)):
+                    if j < trim:
+                        continue
+                    folder = subfolders[j]
+                    if (self.bboxes_dic[folder.split('/')[-3].split('_')[-1]][j] == 0).all():
+                        continue
+                    seq_list.append(join(folder.split('/')[-3], folder.split('/')[-2], folder.split('/')[-1]))
 
-                # Now we can loop through the directory in order to extract the sequences
-                for subdir in subdires:
-                    if subdir != 'img':
-                        seq_list.append(subdir)
+            return seq_list
 
-            return sorted(seq_list, key=self.sort_seq_names)
+
 
     def get_sequence_list(self, subset='Val'):
+        # seq_list = []
+        # for s in self.sequence_list:
+        #     cons_out = self._construct_sequence(s)
+        #     if cons_out.init_info() is not None:
+        #         seq_list.append(cons_out)
+        # return SequenceList(seq_list)
         return SequenceList([self._construct_sequence(s) for s in self.sequence_list])
 
     # def _read_bb_anno(self, seq_path):
@@ -81,7 +124,7 @@ class CatheterTransSegDataset(BaseDataset):
         # Here is the segmentation masks, load them and then put it into the same tensor
         # This may be too big, if it is then try to reduce the number of images used
         seq = seq_path.split('/')[-1]
-        mask_path = os.path.join(self.data_path,'Masks','Val',seq) # This put you into the mask folder for the sequence you are looking at
+        mask_path = seq_path.replace("filtered", "filtered_masks")
 
         # Now we start to load the segmentation masks
         gt = []
@@ -102,13 +145,35 @@ class CatheterTransSegDataset(BaseDataset):
 
         return torch.stack(gt)
 
+    def _read_gt_flows(self,seq_path):
+        flow_folder_path = seq_path.replace("filtered", "flow_cactuss_flownet2")
+        # print("_read_gt_flows path: " + flow_folder_path)
+        gt_flows = []
+        valid = []
+        flow_files = sorted(glob(join(flow_folder_path, '*.flo')))
+        # get flow shape from the first flow file
+        flow_shape = flow_utils.read_gen(flow_files[0]).shape
+
+        for i in range(len(flow_files)):
+            file = flow_files[i]
+            bbox = self.bboxes_dic[seq_path.split('/')[-3].split('_')[-1]][
+                int(seq_path.split('/')[-1].split('_')[-1]), i]
+            if (bbox == 0).all():
+                valid.append(False)
+                # append an empty tensor of the same shape as the flow
+                gt_flows.append(torch.zeros(flow_shape))
+            else:
+                valid.append(True)
+                flow = flow_utils.read_gen(file)
+                flow_tensor = torch.tensor(flow)
+                gt_flows.append(flow_tensor)
+
+        return torch.stack(gt_flows), torch.tensor(valid)    # this is all flow in a label00x folder
+
 
     def _get_sequence_path(self,seq_id,training_mode="Val"):
-        seq_name = self.sequence_list[seq_id-716]
-        class_name = seq_name.split('-')[0]
-        vid_id = seq_name.split('-')[1]
-
-        return os.path.join(self.base_path,class_name, class_name + '-' + vid_id)
+        seq_name = self.sequence_list[seq_id-self.trim_rule[0]].split('/')[-1]
+        return os.path.join(self.base_path, "filtered", seq_name)
 
     # A construct sequence method that: Grabs the class name, the ground truth annotations, whether the object is occluded, whether the object is out of view, whether the target is visible, and finally arranges the frames list in the form of a sequence.
 
@@ -126,26 +191,50 @@ class CatheterTransSegDataset(BaseDataset):
     def _construct_sequence(self,sequence_name):
 
         # This gives you the class name, which for now is just catheter
-        class_name = sequence_name.split('-')[0]
+        class_name = sequence_name.split('/')[0]
 
         # This will give you the sequence number, which will range from 50-65
-        sequence_number = int(sequence_name.split('-')[1])
+        sequence_number = int(sequence_name.split('_')[-1])
 
         # Join the base path, with the class, with the sequence name, and then finally the ground truth file name
-        anno_path = os.path.join(self.base_path, class_name, sequence_name, f'gt_{sequence_name}.txt')
+        # anno_path = os.path.join(self.base_path, class_name, sequence_name, f'gt_{sequence_name}.txt')
 
-        seq_path = os.path.join(self.base_path, class_name, sequence_name)
+        seq_path = os.path.join(self.data_path, sequence_name)
 
         #frames_path = os.path.join(self.base_path, class_name, sequence_name, 'img')
-        frames_path = os.path.join(self.base_path, class_name, sequence_name)
+        frames_path = os.path.join(self.data_path, sequence_name)
 
+        # find the first valid bbox
+        init_frame_id = None
+        init_bbox = None
+        for i in range(len(self.bboxes_dic[class_name.split('_')[-1]][sequence_number])):
+            if self.bboxes_dic[class_name.split('_')[-1]][sequence_number][i].sum() != 0:
+                init_frame_id = i
+                init_bbox = self.bboxes_dic[class_name.split('_')[-1]][sequence_number][i]
+                break
+        if init_frame_id is None:
+            raise ValueError("No valid bbox found in the sequence")
+
+        gt_flow_path = join(seq_path.replace("filtered", "flow_cactuss_flownet2"), f"{init_frame_id:06d}.flo")
+        gt_flow = torch.tensor(flow_utils.read_gen(gt_flow_path))
+        threshold = 0.2
+        # create a binary mask from flow
+        mask_u = gt_flow.abs()[:, :, 0] > threshold
+        mask_v = gt_flow.abs()[:, :, 1] > threshold
+        ground_truth_mask_from_flow = (mask_u | mask_v).float().unsqueeze(0)
+        ground_truth_mask = {init_frame_id: dict()}
+        # pad the mask to the same size as the image
+        if ground_truth_mask_from_flow.shape != torch.Size((1, self.height, self.width)):
+            ground_truth_mask_from_flow = torch.nn.functional.interpolate(ground_truth_mask_from_flow.unsqueeze(0), (self.height, self.width))
+            ground_truth_mask_from_flow = ground_truth_mask_from_flow.squeeze(0)
+        ground_truth_mask[init_frame_id]['mask'] = ground_truth_mask_from_flow.squeeze(0)
+        ground_truth_mask[init_frame_id]['bbox'] = init_bbox
         #ground_truth_rect = self._read_bb_anno(seq_path)
-        ground_truth_mask = self._read_mask_anno(seq_path)
-
+        # ground_truth_mask = self._read_mask_anno(seq_path)
         #ground_truth_rect = None
         seq_len = self._get_seq_len(sequence_number)
 
-
+        print("Folder: " + frames_path + "\nInit frame id: " + str(init_frame_id))
         # The number of zeros will depend on the number of frames in the folder
 
         full_occlusion = np.zeros(seq_len)
@@ -162,7 +251,6 @@ class CatheterTransSegDataset(BaseDataset):
             # print(subdires)
             # print(files)
             for file in files:
-
                 frames_list.append(os.path.join(frames_path, file))
 
         frames_list = sorted(frames_list)
@@ -175,6 +263,17 @@ class CatheterTransSegDataset(BaseDataset):
 
     def __len__(self):
         return len(self.sequence_list)
+
+    def _set_height_width(self):
+        seq_path_0 = os.path.join(self.data_path, self.sequence_list[0])
+        for filename in os.listdir(seq_path_0):
+            if filename.endswith(".png"):
+                img = cv2.imread(os.path.join(seq_path_0, filename))
+                self.height, self.width = img.shape[:2]
+                return
+
+
+
 
 
 # if "__main__" == __name__:

@@ -73,7 +73,7 @@ def x1y1x2y2_to_x1y1wh(bbox):
     return torch.tensor([x1,y1,w,h])
 
 if __name__ == '__main__':
-
+    # The bboxes are stored as a tensor of shape (100, sequence_len, 4), each has (x1, y1, w, h).
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, required=False, help='Path to the dataset', default='/media/liming/Data/IDP/dataset/us_simulation3_cactuss')
     # parser.add_argument('--out', type=str, default=None, help='Path to save the output image. If None, output will not be saved')
@@ -113,10 +113,12 @@ if __name__ == '__main__':
                     flow_tensor.to(device)
                     bounding_box = x1y1x2y2_to_x1y1wh(prutils.flows_to_boxes(flow_tensor.unsqueeze(0)))
                     bboxes[seq_num, file_num] = bounding_box
+
                     # flow_img = torch.tensor(flow_utils.flow2img(flow_tensor.cpu().numpy())).float() / 255.0
                     # # flow_img = flow_to_color(flow)
                     # plt.imshow(flow_img)
                     # plt.show()
+            # plt.close('all')
         # Save the bounding boxes
         if store:
             torch.save(bboxes, out_file_path)

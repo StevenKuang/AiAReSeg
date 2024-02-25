@@ -70,6 +70,10 @@ Please run the following command from ROOT:
 
     python lib/train/run_training.py --segmentation 1 --config AiASeg_s+p --script aiareseg
 
+Please train unsupervised tracking with:
+
+    python lib/train/run_training.py --segmentation 1 --config AiASeg_unsupervised --script aiareseg --unsupervised 1
+
 Training results will be saved under lib/train/checkpoints
 ## Testing:
 
@@ -79,6 +83,12 @@ Edit these paths in ```lib/test/parameter/aiareseg.py```.
 Once that is modified run the following command:
 
     python tracking/test.py --tracker aiareseg --dataset catheter_segmentation_test --param AiASeg_s+p --segmentation 1
+
+Please test unsupervised tracking with:
+
+    python tracking/test.py --tracker aiareseg --dataset catheter_transverse_segmentation_test --param AiASeg_unsupervised --segmentation 1
+
+please adjust which scan to track in the ```__init__``` of ```lib/test/evaluation/cathetertranssegdataset.py```, inside the Val subset."
 
 ## Acknowledgements:
 

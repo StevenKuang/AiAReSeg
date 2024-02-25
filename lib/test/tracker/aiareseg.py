@@ -57,12 +57,24 @@ class AIARESEG(BaseTracker):
         self.dice = DiceLoss(reduction='none')
         self.distance_threshold = 10.0
 
-    def initialize(self, image, info: dict, seq_name: str = None,segmentation:bool = False):
+    def initialize(self, image, info: dict, seq_name: str = None, segmentation: bool = False, unsupervised: bool = False):
 
         # First perform cropping and generate the masks
         if segmentation == True:
-            # The bbox here is the uncropped initial bounding box
-            refer_crop, refer_att_mask, refer_seg_mask, data_invalid, resize_factor_W, resize_factor_H, bbox = image_proc_seg(image,
+            if len(info) > 1:   # have init_bbox
+                refer_crop, refer_att_mask, refer_seg_mask, data_invalid, resize_factor_W, resize_factor_H, bbox = image_proc_seg(
+                    image,
+                    masks=info['init_mask'],
+                    jittered_boxes=info['init_bbox'].numpy().tolist(),
+                    search_area_factor=self.params.search_factor,
+                    output_sz=self.params.search_size)
+                # refer_crop, refer_att_mask, refer_seg_mask, data_invalid, resize_factor_W, resize_factor_H, bbox = image_proc_unsup_seg(image,
+                #                                                           masks=info['init_mask'],
+                #                                                           search_area_factor=self.params.search_factor,
+                #                                                           output_sz=self.params.search_size)
+            else:
+                # The bbox here is the uncropped initial bounding box
+                refer_crop, refer_att_mask, refer_seg_mask, data_invalid, resize_factor_W, resize_factor_H, bbox = image_proc_seg(image,
                                                                           masks=info['init_mask'],
                                                                           search_area_factor=self.params.search_factor,
                                                                           output_sz=self.params.search_size)

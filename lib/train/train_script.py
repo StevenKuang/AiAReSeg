@@ -20,7 +20,7 @@ from lib.utils.box_ops import giou_loss
 # Some more advanced functions
 from .base_functions import *
 from lib.utils.mask_ops import IOULoss
-from monai.losses import DiceLoss
+from monai.losses import DiceLoss, DiceFocalLoss
 import lib.train.losses as losses
 
 def run(settings):
@@ -82,7 +82,7 @@ def run(settings):
             objective = {'reconstruction': None}
             loss_weight = {'reconstruction': cfg.TRAIN.RECONSTRUCTION_WEIGHT}
         else:
-            objective = {'BCE': nn.BCELoss(), 'mask_iou': DiceLoss(), 'MSE': nn.MSELoss()}
+            objective = {'BCE': nn.BCELoss(), 'mask_iou': DiceFocalLoss(), 'MSE': nn.MSELoss()}
             loss_weight = {'BCE': cfg.TRAIN.BCE_MASK_WEIGHT, 'mask_iou': cfg.TRAIN.IOU_MASK_WEIGHT,
             'MSE': cfg.TRAIN.MSE_MASK_WEIGHT}
     else:

@@ -45,7 +45,10 @@ class Sequence:
         self.target_visible = target_visible
         self.object_ids = object_ids
         self.multiobj_mode = multiobj_mode
-        self.init_data = self._construct_init_data(init_data)
+        if "rotations" in self.name:
+            self.init_data = self.ground_truth_seg
+        else:
+            self.init_data = self._construct_init_data(init_data)
         self._ensure_start_frame()
 
     def _ensure_start_frame(self):
@@ -59,7 +62,7 @@ class Sequence:
                         self.ground_truth_rect[obj_id] = gt[start_frame:, :]
                 else:
                     self.ground_truth_rect = self.ground_truth_rect[start_frame:, :]
-            if self.ground_truth_seg is not None:
+            if self.ground_truth_seg is not None and "rotations" not in self.name:
                 self.ground_truth_seg = self.ground_truth_seg[start_frame:]
                 assert len(self.frames) == len(self.ground_truth_seg)
 
@@ -101,7 +104,20 @@ class Sequence:
                         init_data[0]['bbox'] = list(self.ground_truth_rect[0, :])
 
             if self.ground_truth_seg is not None:
-                init_data[0]['mask'] = self.ground_truth_seg[0]
+                # the first frame might not contain the object, find the first frame that contains the object
+                if self.ground_truth_seg[0].max() > 0:
+                    init_data[0]['mask'] = self.ground_truth_seg[0]
+                else:
+                    valid_ids = [i for i in range(len(self.ground_truth_seg)) if self.ground_truth_seg[i].max() > 0]
+                    if len(valid_ids) > 0:
+                        del init_data[0]
+                        init_data = {valid_ids[0]: dict()}
+                        init_data[valid_ids[0]]['mask'] = self.ground_truth_seg[valid_ids[0]]
+                    else:
+                        del init_data[0]
+                        init_data = {len(self.ground_truth_seg): dict()}
+                        print('Warning: no valid mask found in the sequence {}'.format(self.name))
+                        return init_data
 
         return init_data
 

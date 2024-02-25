@@ -620,7 +620,7 @@ def flows_to_boxes(flows: torch.Tensor) -> torch.Tensor:
 
     # Get the bounding box
     bounding_boxes = torch.zeros((num_flows, 4), device=flows.device, dtype=torch.float)
-    threshold = 0.2
+    threshold = 0.3
     for index, flow in enumerate(flows):
         v, u, _ = torch.where(torch.abs(flow) > threshold)
         # print('u:' + str(u.shape) + 'v:' + str(v.shape))
@@ -631,7 +631,7 @@ def flows_to_boxes(flows: torch.Tensor) -> torch.Tensor:
         bounding_boxes[index, 2] = torch.max(u)
         bounding_boxes[index, 3] = torch.max(v)
 
-        bounding_boxes[index] = expand_box_edge(bounding_boxes[index], frame_height, frame_width, 0.25)
+        bounding_boxes[index] = expand_box_edge(bounding_boxes[index], frame_height, frame_width, 0.2)
 
     # visualize the bounding box
     # visualize_flow_bbox(bounding_boxes, flows, 'xyxy')

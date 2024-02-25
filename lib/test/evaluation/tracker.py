@@ -139,7 +139,7 @@ class Tracker:
             image = self._read_image(seq.frames[0])
 
         start_time = time.time()
-        out = tracker.initialize(image, init_info, seq.name,segmentation)
+        out = tracker.initialize(image, init_info, seq.name, segmentation)
 
         # If for some reason the output is invalid keep looping
         index = 1

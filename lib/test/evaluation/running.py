@@ -79,7 +79,7 @@ def _save_tracker_output(seq: Sequence, tracker: Tracker, output: dict, segmenta
         if key == 'target_mask':
             if not os.path.exists(base_results_path):
                 print('create tracking result dir', base_results_path)
-                os.mkdir(base_results_path)
+                os.makedirs(base_results_path, exist_ok=True)       # create parent as well
 
             save_mask(base_results_path,data)
             # Loop through each of the list in the data and store it inside of a folder
