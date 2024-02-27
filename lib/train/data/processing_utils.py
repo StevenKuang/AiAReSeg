@@ -225,7 +225,7 @@ def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, ou
     else:
         x, y, w, h = bbox
 
-    # Lets plot both the image and the bounding box
+    # # Lets plot both the image and the bounding box
     # fig, ax = plt.subplots(1,2, figsize=(20,20))
     # ax[0].imshow(im)
     #
@@ -235,7 +235,8 @@ def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, ou
 
 
     # Crop image
-    crop_sz = math.ceil(math.sqrt(w * h) * search_area_factor)
+    crop_sz = 320
+    # crop_sz = math.ceil(math.sqrt(w * h) * search_area_factor)
 
     if crop_sz < 1:
         # raise Exception('ERROR: too small bounding box')
@@ -256,20 +257,20 @@ def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, ou
 
 
     # Crop target
-    im_crop = im[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]
-
+    # im_crop = im[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]
+    im_crop = im
     # # plot the cropped image
     # plt.imshow(im_crop)
     # plt.show()
-
+    #
     # # Also plot the segmentation mask
     # flow_plot = flow[0].detach().cpu().int().numpy()
     # mask = np.repeat(flow_plot[:,:,np.newaxis],3,axis=2)
     # mask = np.where(mask==1.,[1.,0.,0.],[0.,0.,0.])
     # rect = patches.Rectangle((int(x1), int(y1)), crop_sz, crop_sz, linewidth=2, edgecolor='b', facecolor='none')
     # ax[1].add_patch(rect)
-    # output = im.copy().astype(float)
-    # output = cv.addWeighted(output,1.0,mask,0.5, 0.0, dtype=cv.CV_8U)
+    # # output = im.copy().astype(float)
+    # # output = cv.addWeighted(output,1.0,mask,0.5, 0.0, dtype=cv.CV_8U)
     #
     # ax[1].imshow(mask)
     #
@@ -279,7 +280,8 @@ def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, ou
     if isinstance(flow,list) or isinstance(flow,tuple):
         flow = flow[0]
 
-    im_flow_crop = flow[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]
+    # im_flow_crop = flow[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]
+    im_flow_crop = flow
     # # plot the cropped flow
     # rgb_flow = torch.tensor(flow_utils.flow2img(im_flow_crop.cpu().numpy())).float() / 255.0
     # plt.imshow(rgb_flow)
@@ -287,7 +289,8 @@ def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, ou
 
     # Pad
     if isinstance(im, np.ndarray):
-        im_crop_padded = cv.copyMakeBorder(im_crop, y1_pad, y2_pad, x1_pad, x2_pad, cv.BORDER_CONSTANT)
+        # im_crop_padded = cv.copyMakeBorder(im_crop, y1_pad, y2_pad, x1_pad, x2_pad, cv.BORDER_CONSTANT)
+        im_crop_padded = im_crop
 
     elif isinstance(im, torch.Tensor):
         # this implementation is wrong
@@ -297,7 +300,8 @@ def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, ou
     # convert flow to np.ndarray
     im_flow_crop = im_flow_crop.cpu().numpy()
     if isinstance(im_flow_crop, np.ndarray):
-        flow_crop_padded = cv.copyMakeBorder(im_flow_crop, y1_pad, y2_pad, x1_pad, x2_pad, cv.BORDER_CONSTANT)
+        flow_crop_padded = im_flow_crop
+        # flow_crop_padded = cv.copyMakeBorder(im_flow_crop, y1_pad, y2_pad, x1_pad, x2_pad, cv.BORDER_CONSTANT)
     elif isinstance(im_flow_crop, torch.Tensor):
         # this implementation is wrong
         flow_crop_padded = torch.nn.functional.pad(im_flow_crop, (y1_pad, y2_pad, x1_pad, x2_pad), value=0)
@@ -315,7 +319,7 @@ def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, ou
         end_y = None
     if x2_pad == 0:
         end_x = None
-    att_mask[y1_pad:end_y, x1_pad:end_x] = 0
+    # att_mask[y1_pad:end_y, x1_pad:end_x] = 0
 
     if output_sz is not None:
         resize_factor_H = output_sz/H
