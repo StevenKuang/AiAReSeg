@@ -79,7 +79,8 @@ def sample_target(im, target_bb, search_area_factor, output_sz=None):
         return im_crop_padded, att_mask.astype(np.bool_), 1.0
 
 def sample_image_seg(im, seg_mask=None, bbox=None, search_area_factor=None, output_sz=None, data_invalid=False):
-
+    # im: ndarray (H,W,3)(600,800,3) range 0-255
+    # im_crop_padded: ndarray (320,320,3) range 0,1
     # try:
     #     bbox = generate_bboxes(seg_mask.unsqueeze(0))
     # except:
@@ -107,18 +108,9 @@ def sample_image_seg(im, seg_mask=None, bbox=None, search_area_factor=None, outp
     else:
         x, y, w, h = bbox
 
-    # Lets plot both the image and the bounding box
-    # fig, ax = plt.subplots(1,2, figsize=(20,20))
-    # ax[0].imshow(im)
-    #
-    # rect = patches.Rectangle((int(x1), int(y1)), int(w), int(h), linewidth=2,  edgecolor='r', facecolor='none')
-    # ax[0].add_patch(rect)
-
-
-
     # Crop image
     crop_sz = math.ceil(math.sqrt(w * h) * search_area_factor)
-
+    # crop_sz = math.ceil(math.sqrt(w * h) * self.params.search_factor * (1.0 + (enlarge_factor * iter)))
     if crop_sz < 1:
         # raise Exception('ERROR: too small bounding box')
         data_invalid = True
@@ -136,20 +128,23 @@ def sample_image_seg(im, seg_mask=None, bbox=None, search_area_factor=None, outp
     y1_pad = max(0, -y1)
     y2_pad = max(y2 - im.shape[0] + 1, 0)
 
+    # transform the bounding box to the format of x1y1wh
+
+
     # Crop target
     im_crop = im[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]
 
-    # # Also plot the segmentation mask
-    # seg_mask_plot = seg_mask[0].detach().cpu().int().numpy()
-    # mask = np.repeat(seg_mask_plot[:,:,np.newaxis],3,axis=2)
-    # mask = np.where(mask==1.,[1.,0.,0.],[0.,0.,0.])
-    # rect = patches.Rectangle((int(x1), int(y1)), crop_sz, crop_sz, linewidth=2, edgecolor='b', facecolor='none')
-    # ax[1].add_patch(rect)
-    # output = im.copy().astype(float)
-    # output = cv.addWeighted(output,1.0,mask,0.5, 0.0, dtype=cv.CV_8U)
-    #
-    # ax[1].imshow(mask)
-    #
+    # print the cropped region in format of x1y1wh
+    print("Cropped region: ", x1 + x1_pad, y1 + y1_pad, x2 - x2_pad - (x1 + x1_pad), y2 - y2_pad - (y1 + y1_pad))
+
+    # # Lets plot both the image and the bounding box
+    # fig, ax = plt.subplots(1,1, figsize=(20,20))
+    # ax.imshow(im)
+    # rect = patches.Rectangle((int(bbox[0]), int(bbox[1])), int(bbox[2]), int(bbox[3]), linewidth=2,  edgecolor='r', facecolor='none')
+    # ax.add_patch(rect)
+    # #  plot the cropping box on top of im before and after expanding
+    # rect2 = patches.Rectangle((int(x1 + x1_pad), int(y1 + y1_pad)), x2 - x2_pad - (x1 + x1_pad), y2 - y2_pad - (y1 + y1_pad), linewidth=2, edgecolor='b', facecolor='none')
+    # ax.add_patch(rect2)
     # plt.show()
 
     # Crop the target mask as well
@@ -258,6 +253,7 @@ def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, ou
 
     y1_pad = max(0, -y1)
     y2_pad = max(y2 - im.shape[0] + 1, 0)
+
 
     # Crop target
     im_crop = im[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]

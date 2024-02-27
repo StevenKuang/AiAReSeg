@@ -5,7 +5,6 @@ import os
 import torch
 import cv2
 
-
 class CatheterSegDataset(BaseDataset):
     """
     The catheter tracking dataset consists of 50 training sequences and an additional 15 testing sequences.
@@ -153,9 +152,12 @@ class CatheterSegDataset(BaseDataset):
         out_of_view = np.zeros(seq_len)
 
         # We now want to grab the path of each of the frames
-
+        # define transformation
+        mean = torch.tensor([0.485, 0.465, 0.406])
+        std = torch.tensor([0.229, 0.224, 0.225])
+        # transforms = tfm.Transform(tfm.ToTensorAndJitter(0),
+        #                         tfm.Normalize(mean, std))
         # Easiest way is to do a walk across the files again
-
         frames_list = []
         for names, subdires, files in os.walk(os.path.join(frames_path)):
             # print(names)

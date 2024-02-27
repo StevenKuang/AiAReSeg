@@ -114,9 +114,10 @@ class LTRTrainer(BaseTrainer):
         log_epoch = self.epoch
         if self.epoch >= 500:
             log_epoch = self.epoch - 500
-        wandb.log({'epoch_loss': avg_epoch_loss / limit,
-                   'epoch': log_epoch,
-                   'learning_rate': self.optimizer.param_groups[0]['lr']})
+        wandb.log({'epoch_loss': avg_epoch_loss / limit})
+        wandb.log({'learning_rate': self.optimizer.param_groups[0]['lr']})
+                   # 'epoch': log_epoch,
+                   # 'learning_rate': self.optimizer.param_groups[0]['lr']})
 
     def train_epoch(self):
         """

@@ -52,7 +52,9 @@ class Catheter_unsupervised_segmentation(BaseVideoDataset):
         # self.render_size = [-1, -1]
         if mode == 'Train':
             simu_list = ["01", "21", "09", "29"]
-            trim_rule = [0, 0, 0, 5]
+            trim_rule = [0, 0, 0, 0]
+            # self.simu_list = ["01", "21", "09", "29"]
+            # self.trim_rule = [30, 40, 30, 15]
             # simu_list = ["21"]
             # trim_rule = [40]
         elif mode == 'Val':

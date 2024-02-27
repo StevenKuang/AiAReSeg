@@ -31,8 +31,10 @@ def parameters(yaml_name: str):
     # params.checkpoint = "/home/atr17/PhD/Research/Phase_5_Al_model_building/DETR_net/AiAReSeg/lib/train/checkpoints/train/aiareseg/AiASeg_s+p/AIARESEG_ep0024.pth.tar"
     # /home/liming/Documents/AiAProj/AiAReSeg/pretrained_networks/AIATRACK_ep0500.pth.tar
     aiareseg_checkpoint = 'pretrained_networks/AIATRACK_ep0500.pth.tar'
-    unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/unsup_best/AIARESEG_ep0583.pth.tar'
+    # unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/unsup_best/AIARESEG_ep0583_old.pth.tar'
+    unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/unsup_best/AIARESEG_ep0585.pth.tar'
     # unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/AIARESEG_ep0558.pth.tar'
+    # unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/unsup_best/AIARESEG_ep0379_sup.pth.tar'
     params.checkpoint = os.path.join(work_dir, unsupaia_checkpoint)
     # Whether to save boxes from all queries
     params.save_all_boxes = False

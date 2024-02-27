@@ -36,6 +36,7 @@ class AIARESEG(BaseTracker):
         # For debug
         self.debug = False
         self.frame_id = 0
+        self.last_valid_frame = 0
         # Set the hyper-parameters
         DATASET_NAME = dataset_name.upper()
         if hasattr(self.cfg.TEST.HYPER, DATASET_NAME):
@@ -65,7 +66,7 @@ class AIARESEG(BaseTracker):
                 refer_crop, refer_att_mask, refer_seg_mask, data_invalid, resize_factor_W, resize_factor_H, bbox = image_proc_seg(
                     image,
                     masks=info['init_mask'],
-                    jittered_boxes=info['init_bbox'].numpy().tolist(),
+                    jittered_boxes=[info['init_bbox']],
                     search_area_factor=self.params.search_factor,
                     output_sz=self.params.search_size)
                 # refer_crop, refer_att_mask, refer_seg_mask, data_invalid, resize_factor_W, resize_factor_H, bbox = image_proc_unsup_seg(image,
@@ -171,38 +172,50 @@ class AIARESEG(BaseTracker):
     def track(self, image, info: dict = None, seq_name: str = None, segmentation: bool = None):
         H, W, _ = image[0].shape
         self.frame_id += 1
+        # debug
+        print(f"Frame {self.frame_id}" + f"\tLast valid {self.last_valid_frame}")
         # Get the t-th search region
         if self.frame_id == 1:
             self.init_mask = self.state
 
         no_mask = True
         iter = 0
-
+        min_valid_iter = 2
+        out_full_mask = None
+        first_valid_iter = 1
+        enlarge_factor = 2
         while no_mask == True:
             if segmentation == True:
 
-                if iter == 0:
-                    search_crop, search_att_mask, search_seg_mask, data_invalid, resize_factor_W, resize_factor_H, bbox = image_proc_seg(image,
-                                                                                  masks=self.state,
-                                                                                  search_area_factor=self.params.search_factor,
-                                                                                  output_sz=self.params.search_size)
+                # if iter == 0:
+                #     search_crop, search_att_mask, search_seg_mask, data_invalid, resize_factor_W, resize_factor_H, bbox = image_proc_seg(image,
+                #                                                                   masks=self.state,
+                #                                                                   search_area_factor=self.params.search_factor,
+                #                                                                   output_sz=self.params.search_size)
 
 
-                elif (0<iter<20):
+                if (0 <= iter < max(10, min_valid_iter + first_valid_iter) and first_valid_iter <= 10):
+                # if (0 <= iter < 10):
                     # If still cant find it, then lets jitter the box a bit and move it in different directions
                     boxes = masks_to_boxes(self.state[0].unsqueeze(0)).squeeze(0).tolist()
 
                     boxes = self.x1y1x2y2_to_x1y1wh(boxes)
                     # print(f"Multishot, iter {iter}")
                     # print(boxes)
-                    if boxes[2] == 0:
-                        boxes[2] = 10
-                    if boxes[3] == 0:
-                        boxes[3] = 10
-
+                    if boxes[2] < 20:
+                        boxes[2] = 30
+                    if boxes[3] < 20:
+                        boxes[3] = 30
                     boxes = [torch.tensor(boxes)]
+                    # if self.frame_id - self.last_valid_frame > 3:
+                    i = 0
+                    while i < self.frame_id - self.last_valid_frame - 3:
+                        boxes = self.move_bbox_towards_center(boxes, W, H, 5)
+                        print("Moved bbox")
+                        i += 1
 
-                    enlarged_search_area = self.params.search_factor * (1.0 + (0.01 * iter))
+                    # enlarged_search_area = self.params.search_factor * (1.0 + (0.01 * iter))
+                    enlarged_search_area = self.params.search_factor * (1.0 + (enlarge_factor*iter))
                     # print(f"enlarged_search_area: {enlarged_search_area}")
                     search_crop, search_att_mask, search_seg_mask, data_invalid, resize_factor_W, resize_factor_H, bbox = image_proc_seg(image,
                                                                                   masks=self.state,
@@ -240,6 +253,7 @@ class AIARESEG(BaseTracker):
                                                                             output_sz=self.params.search_size)  # (x1, y1, w, h)
                 search_img = self.preprocessor.process(search_crop, search_att_mask)
 
+
             search_dict_list = []
             with torch.no_grad():
 
@@ -248,6 +262,47 @@ class AIARESEG(BaseTracker):
                 search_back_short = {k: search_back[k] for i,k in enumerate(search_back) if i < 4}
                 search_dict_list.append(search_back_short)
                 search_dict = merge_feature_sequence(search_dict_list)
+
+                # ########Plotting attention maps for debugging##########
+                # # We plot the original, and then all of the attention maps in subsequent layers
+                # search_img_viz = torch.tensor(search_crop[0]).unsqueeze(0).permute(0, 3, 1, 2)
+                # # Denorm
+                # search_img_copy = search_img_viz.permute(0, 2, 3, 1).detach().cpu()  # (b,320,320,3)
+                # mean = torch.tensor([0.485, 0.465, 0.406])
+                # std = torch.tensor([0.229, 0.224, 0.225])
+                # search_img_denorm = search_img_copy
+                # # search_img_denorm = (search_img_copy * std) + mean
+                #
+                # copy_src = search_dict['feat']
+                # copy_src = copy_src.permute(1, 2, 0).view(-1, 256, 20, 20)
+                # # gt_flow = data['search_flow'].squeeze(0).permute(0, 3, 1, 2)
+                #
+                # for i in range(copy_src.shape[0]):
+                #     plot_img = copy_src[i, 0, ...].detach().cpu().numpy().astype(float)
+                #     min_val = np.min(plot_img)
+                #     max_val = np.max(plot_img)
+                #
+                #     new_min = 0.0
+                #     new_max = 1.0
+                #
+                #     plot_img_transformed = new_min + ((plot_img - min_val) * (new_max - new_min)) / (max_val - min_val)
+                #     search_img_plot = search_img_denorm[i, ...].numpy()
+                #     # rgb_flow = torch.tensor(flow_utils.flow2img(gt_flow[i].permute(1,2,0).cpu().numpy())).float() / 255.0
+                #
+                #     fig, ax = plt.subplots(1, 2)
+                #     ax[0].imshow(search_img_plot)
+                #     # ax[0].set_title('Cropped denormalized search image')
+                #     ax[0].set_title('Cropped search image')
+                #     # plt.show()
+                #
+                #     ax[1].imshow(plot_img_transformed)
+                #     ax[1].set_title('Attention map')
+                #
+                #     # ax[2].imshow(rgb_flow)
+                #     # ax[2].set_title('gt flow')
+                #     plt.show()
+                #
+                # ########Plotting for debugging##########
 
                 # Run the transformer
                 out_embed, search_mem, pos_emb, key_mask = self.net.forward_transformer(search_dic=search_dict,
@@ -272,20 +327,80 @@ class AIARESEG(BaseTracker):
             if segmentation == True:
 
                 # Processing 1: Perform thresholding, any mask value < 0.5 is filtered out
-                out_mask = out_seg.squeeze(0).squeeze(0)
-                out_mask = torch.where(out_mask<0.5,0.0,1.0)
-                check_sum = torch.sum(out_mask)  # The check sum ensures that a segmentation mask is actually generated
 
-                if torch.sum(check_sum) == 0:
-                    no_mask = True
+                if iter < max(10, min_valid_iter + first_valid_iter):
+                    out_temp_mask = out_seg.squeeze(0).squeeze(0)
+                    out_temp_mask = torch.where(out_temp_mask < 0.5, 0.0, 1.0)
+                    if out_full_mask is None:
+                        first_valid_iter = iter + 1
+                        check_sum = torch.sum(out_temp_mask)
+                        # if there's a large enough mask
+                        if check_sum >= 10 * 20:
+                            resize_factors = [resize_factor_H, resize_factor_W]
+                            out_full_mask = self.map_mask_back(resize_factors=resize_factors, mask=out_temp_mask, bbox=bbox, im_H=H, im_W=W, iter=iter, enlarge_factor=enlarge_factor)
+                            self.last_valid_frame = self.frame_id
+                            # plot the mask
+                            rgb_mask = torch.tensor(out_full_mask).unsqueeze(0).unsqueeze(0).repeat(1, 3, 1, 1)
+                            rgb_mask = rgb_mask.permute(0, 2, 3, 1).detach().cpu().numpy()
+                            plt.imshow(rgb_mask[0])
+                            plt.title(f"First hit Iter {iter}")
+                            plt.show()
+                    else:
+                        # merge the enlarged out_temp_mask with the out_full_mask
+                        resize_factors = [resize_factor_H, resize_factor_W]
+                        before_merge_full_mask = self.map_mask_back(resize_factors=resize_factors, mask=out_temp_mask, bbox=bbox, im_H=H, im_W=W, iter=iter, enlarge_factor=enlarge_factor)
+
+                        # plot the mask
+                        rgb_mask = torch.tensor(out_full_mask).unsqueeze(0).unsqueeze(0).repeat(1, 3, 1, 1)
+                        rgb_mask = rgb_mask.permute(0, 2, 3, 1).detach().cpu().numpy().astype(np.uint8) * 255
+                        # overlay before_merge_full_mask as color
+                        rgb_before_merge_full_mask = torch.tensor(before_merge_full_mask).unsqueeze(0).unsqueeze(0).repeat(1, 3, 1, 1).permute(0, 2, 3, 1).detach().cpu().numpy().astype(np.uint8)  * 255
+                        rgb_overlay = cv2.addWeighted(image[0], 1, rgb_before_merge_full_mask[0], 0.5, 0)
+                        rgb_overlay = cv2.addWeighted(rgb_overlay, 1, rgb_mask[0], 0.5, 0)
+                        plt.imshow(rgb_overlay)
+                        # plt.imshow(rgb_before_merge_full_mask[0], cmap='cool', alpha=0.1)
+                        # plt.imshow(rgb_mask[0], cmap='hot', alpha=0.1)
+                        plt.title(f"Iter {iter}")
+                        plt.show()
+
+                        # merge
+                        out_full_mask = torch.max(out_full_mask, before_merge_full_mask)
+
+
                     iter += 1
                     continue
                 else:
-                    no_mask = False
-                # Processing 2: Perform mapping, mapping the segmentation mask back into the original image dimensions
-                resize_factors = [resize_factor_H, resize_factor_W]
+                    if out_full_mask is None:
+                        out_temp_mask = out_seg.squeeze(0).squeeze(0)
+                        out_temp_mask = torch.where(out_temp_mask < 0.5, 0.0, 1.0)
+                        check_sum = torch.sum(out_temp_mask)
+                    else:
+                        check_sum = torch.sum(out_full_mask)
 
-                new_state = [self.map_mask_back(resize_factors=resize_factors, mask=out_mask, bbox=bbox, im_H=H, im_W=W, iter=iter)]
+                    # The check sum ensures that a segmentation mask is actually generated
+                    # if torch.sum(check_sum) == 0:
+                    if check_sum <= 10 * 20:
+                        no_mask = True
+                        iter += 1
+                        first_valid_iter = iter
+                        continue
+                    else:
+                        if out_full_mask is None:
+                            resize_factors = [resize_factor_H, resize_factor_W]
+                            out_full_mask = self.map_mask_back(resize_factors=resize_factors, mask=out_temp_mask, bbox=bbox, im_H=H, im_W=W, iter=iter, enlarge_factor=enlarge_factor)
+                            # plot the mask
+                            rgb_mask = torch.tensor(out_full_mask).unsqueeze(0).unsqueeze(0).repeat(1, 3, 1, 1)
+                            rgb_mask = rgb_mask.permute(0, 2, 3, 1).detach().cpu().numpy()
+                            plt.imshow(rgb_mask[0])
+                            plt.title(f"Last one valid Iter {iter}")
+                            plt.show()
+                        no_mask = False
+                        self.last_valid_frame = self.frame_id
+                # Processing 2: Perform mapping, mapping the segmentation mask back into the original image dimensions
+                # resize_factors = [resize_factor_H, resize_factor_W]
+                #
+                # new_state = [self.map_mask_back(resize_factors=resize_factors, mask=out_full_mask, bbox=bbox, im_H=H, im_W=W, iter=iter)]
+                new_state = [out_full_mask]
 
                 # Check the intersection
                 dice_loss = self.dice(new_state[0], self.state[0])
@@ -340,7 +455,7 @@ class AIARESEG(BaseTracker):
                     _ = self.refer_temporal_cache.pop(1)
 
                 # The target regions are updated based on previous segementation masks instead
-                target_region = torch.nn.functional.interpolate(out_mask.unsqueeze(0).unsqueeze(0), size=(self.feat_size,self.feat_size), mode='bilinear', align_corners=False)
+                target_region = torch.nn.functional.interpolate(out_full_mask.unsqueeze(0).unsqueeze(0), size=(self.feat_size,self.feat_size), mode='bilinear', align_corners=False)
                 target_region = target_region.view(self.feat_size * self.feat_size, -1)
                 background_region = 1 - target_region
                 refer_region = torch.cat([target_region, background_region], dim=1).unsqueeze(0).cuda()
@@ -440,7 +555,7 @@ class AIARESEG(BaseTracker):
         cy_real = cy + (cy_prev - half_side)
         return [cx_real - 0.5 * w, cy_real - 0.5 * h, w, h]
 
-    def map_mask_back(self, mask, resize_factors, bbox, im_H, im_W, iter):
+    def map_mask_back(self, mask, resize_factors, bbox, im_H, im_W, iter, enlarge_factor):
 
         # This is the bounding box of the previous frame's segmentation mask, not enlarged
         if isinstance(bbox, list) or isinstance(bbox, tuple):
@@ -450,11 +565,11 @@ class AIARESEG(BaseTracker):
             x1, y1, x2, y2 = bbox[0][0, ...].tolist()
             w = x2 - x1
             h = y2 - y1
-        if iter == 0:
-            # You may want to enlarge it in order to make the sizes match
-            crop_sz = math.ceil(math.sqrt(w * h) * self.params.search_factor)
-        else:
-            crop_sz = math.ceil(math.sqrt(w * h) * self.params.search_factor * (1+0.05)*iter)
+        # if iter == 0:
+        #     # You may want to enlarge it in order to make the sizes match
+        #     crop_sz = math.ceil(math.sqrt(w * h) * self.params.search_factor)
+        # else:
+        crop_sz = math.ceil(math.sqrt(w * h) * self.params.search_factor * (1.0 + (enlarge_factor*iter)))
 
 
         x1_new = round(x1 + 0.5 * w - crop_sz * 0.5)
@@ -471,6 +586,8 @@ class AIARESEG(BaseTracker):
         padded_W = (x2_new - x2_new_pad) - (x1_new + x1_new_pad)
         padded_H = (y2_new - y2_new_pad) - (y1_new + y1_new_pad)
 
+        # print("Cropped region: ", x1 + x1_pad, y1 + y1_pad, x2 - x2_pad - (x1 + x1_pad), y2 - y2_pad - (y1 + y1_pad))
+        print("Scale up region: ", x1_new + x1_new_pad, y1_new + y1_new_pad, x2_new - x2_new_pad - (x1_new + x1_new_pad), y2_new - y2_new_pad - (y1_new + y1_new_pad))
         # After enlarged, take the mask, shrink it to the size you desire
 
         mask_orig_cropped = torch.nn.functional.interpolate(mask.unsqueeze(0).unsqueeze(0), size=(padded_H, padded_W), mode='bilinear', align_corners=False).squeeze(0).squeeze(0)
@@ -611,7 +728,21 @@ class AIARESEG(BaseTracker):
     def euclidean_distance(self, elem1, elem2):
         output = math.sqrt((elem1[0]-elem2[0])**2 + (elem1[1]-elem2[1])**2)
         return output
+    def move_bbox_towards_center(self, bbox, W, H, magnitude):
+        # bbox is x1y1wh left upper corner, W,H are image dimension
+        x1,y1,w,h = bbox[0]
+        image_center_x, image_center_y = W / 2, H / 2
 
+        bbox_center_x = x1 + w / 2
+        bbox_center_y = y1 + h / 2
 
+        move_x = magnitude if bbox_center_x < image_center_x else -magnitude
+        move_y = magnitude if bbox_center_y < image_center_y else -magnitude
+
+        # Move x1, y1 towards the image center , ensuring it doesn't go outside the image bounds
+        new_x1 = min(max(x1 + move_x, 0), W - w)
+        new_y1 = min(max(y1 + move_y, h), H - h)
+
+        return [torch.tensor([new_x1, new_y1, w, h])]
 def get_tracker_class():
     return AIARESEG

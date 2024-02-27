@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 from lib.test.evaluation.environment import env_settings
-
+import lib.train.data.transforms as tfm
 
 def trackerlist(name: str, parameter_name: str, dataset_name: str, run_ids=None, display_name: str = None,
                 result_only=False):
@@ -141,6 +141,12 @@ class Tracker:
         start_time = time.time()
         out = tracker.initialize(image, init_info, seq.name, segmentation)
 
+        # define transformation
+        mean = torch.tensor([0.485, 0.465, 0.406])
+        std = torch.tensor([0.229, 0.224, 0.225])
+        transforms = tfm.Transform(tfm.ToTensorAndJitter(0),
+                                   tfm.Normalize(mean, std))
+
         # If for some reason the output is invalid keep looping
         index = 1
         while out is True and index < len(seq.frames)-1:
@@ -149,6 +155,7 @@ class Tracker:
             #frame_info = seq.frame_info(index)
             out = tracker.initialize(image, init_info, seq.name, segmentation)
             index += 1
+
 
 
         if out is None:
@@ -183,6 +190,8 @@ class Tracker:
 
             info = seq.frame_info(frame_num)
             info['previous_output'] = prev_output
+
+            # image = [transforms(image=image)[0].permute(1, 2, 0).numpy()]
 
             out = tracker.track(image, info, seq.name, segmentation)
 

@@ -321,12 +321,12 @@ class AIARESEGActor(BaseActor):
         # # debug
         # # visualize the binary mask for debugging, if true then white else black
         # ori_img = data['search_images'][0]
-        # rgb_mask = torch.cat([mask_from_flow.squeeze(0), mask_from_flow.squeeze(0), mask_from_flow.squeeze(0)], dim=0).permute(1, 2, 0).cpu().numpy() * 255
-        # rgb_flow = torch.tensor(flow_utils.flow2img(flow.cpu().numpy())).float() / 255.0
+        # rgb_mask = torch.cat([mask_from_flow.squeeze(0), mask_from_flow.squeeze(0), mask_from_flow.squeeze(0)], dim=1).permute(0, 2, 3, 1).cpu().numpy() * 255
+        # rgb_flow = torch.tensor(flow_utils.flow2img(flow[0].cpu().numpy())).float() / 255.0
         # fig, axs = plt.subplots(1, 3)
-        # axs[0].imshow(rgb_mask)
+        # axs[0].imshow(rgb_mask[0])
         # axs[1].imshow(rgb_flow)
-        # axs[2].imshow(ori_img.permute(1, 2, 0).cpu().numpy())
+        # axs[2].imshow(ori_img[0].permute(1, 2, 0).cpu().numpy())
         # plt.show()
         if self.cfg.TRAIN.USE_RECONSTRUCTION <= 1:
             loss, status = self.compute_losses_seg(out_seg, mask_from_flow, return_status)

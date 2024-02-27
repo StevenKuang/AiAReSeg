@@ -8,6 +8,7 @@ from os.path import join
 from glob import glob
 from lib.train.data import flow_utils
 
+
 class CatheterTransSegDataset(BaseDataset):
     """
     The catheter tracking dataset consists of 50 training sequences and an additional 15 testing sequences.
@@ -28,10 +29,12 @@ class CatheterTransSegDataset(BaseDataset):
             self.simu_list = ["01", "21", "09", "29"]
             self.trim_rule = [30, 40, 30, 15]
         elif subset == 'Val':
-            self.simu_list = ["31"]
-            self.trim_rule = [44]
             # self.simu_list = ["21"]
-            # self.trim_rule = [0]
+            # self.trim_rule = [30]       # min:2 factor:0.5
+            self.simu_list = ["01"]
+            self.trim_rule = [98]
+            # self.simu_list = ["31"]
+            # self.trim_rule = [50]
         else:
             AttributeError("The mode is not recognized")
 
