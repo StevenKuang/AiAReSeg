@@ -29,12 +29,14 @@ class CatheterTransSegDataset(BaseDataset):
             self.simu_list = ["01", "21", "09", "29"]
             self.trim_rule = [30, 40, 30, 15]
         elif subset == 'Val':
-            # self.simu_list = ["21"]
-            # self.trim_rule = [30]       # min:2 factor:0.5
-            self.simu_list = ["01"]
-            self.trim_rule = [98]
+            self.simu_list = ["21"]
+            self.trim_rule = [30]       # min:2 factor:0.5
+            # self.simu_list = ["01"]
+            # self.trim_rule = [60]
             # self.simu_list = ["31"]
-            # self.trim_rule = [50]
+            # self.trim_rule = [60]
+            # self.simu_list = ["31"]
+            # self.trim_rule = [20]   # problematic
         else:
             AttributeError("The mode is not recognized")
 

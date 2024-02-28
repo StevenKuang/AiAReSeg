@@ -135,16 +135,20 @@ def sample_image_seg(im, seg_mask=None, bbox=None, search_area_factor=None, outp
     im_crop = im[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]
 
     # print the cropped region in format of x1y1wh
-    print("Cropped region: ", x1 + x1_pad, y1 + y1_pad, x2 - x2_pad - (x1 + x1_pad), y2 - y2_pad - (y1 + y1_pad))
+    print("Cropped region: ", x1 + x1_pad, y1 + y1_pad, x2 - x2_pad - (x1 + x1_pad), y2 - y2_pad - (y1 + y1_pad), "\tsearch area factor: ", search_area_factor, "\tcrop_sz: ", crop_sz)
 
     # # Lets plot both the image and the bounding box
-    # fig, ax = plt.subplots(1,1, figsize=(20,20))
-    # ax.imshow(im)
+    # fig, ax = plt.subplots(1,1, figsize=(10,10))
+    # rgb_mask = torch.tensor(seg_mask[0]).unsqueeze(0).unsqueeze(0).repeat(1, 3, 1, 1)
+    # rgb_mask = rgb_mask.permute(0, 2, 3, 1).detach().cpu().numpy().astype(np.uint8) * 255
+    # rgb_overlay = cv.addWeighted(im, 1, rgb_mask[0], 0.5, 0)
+    # ax.imshow(rgb_overlay)
     # rect = patches.Rectangle((int(bbox[0]), int(bbox[1])), int(bbox[2]), int(bbox[3]), linewidth=2,  edgecolor='r', facecolor='none')
     # ax.add_patch(rect)
     # #  plot the cropping box on top of im before and after expanding
     # rect2 = patches.Rectangle((int(x1 + x1_pad), int(y1 + y1_pad)), x2 - x2_pad - (x1 + x1_pad), y2 - y2_pad - (y1 + y1_pad), linewidth=2, edgecolor='b', facecolor='none')
     # ax.add_patch(rect2)
+    # plt.title("search area factor: {}".format(search_area_factor))
     # plt.show()
 
     # Crop the target mask as well
@@ -158,12 +162,17 @@ def sample_image_seg(im, seg_mask=None, bbox=None, search_area_factor=None, outp
         im_crop_padded = cv.copyMakeBorder(im_crop, y1_pad, y2_pad, x1_pad, x2_pad, cv.BORDER_CONSTANT)
 
     elif isinstance(im, torch.Tensor):
+        # this implementation is wrong
         im_crop_padded = torch.nn.functional.pad(im_crop, (y1_pad, y2_pad, x1_pad, x2_pad), value=0)
 
-    if isinstance(seg_mask, np.ndarray):
+    mask_crop_padded = None
+    im_mask_crop = im_mask_crop.cpu().numpy()
+    if isinstance(im_mask_crop, np.ndarray):
         mask_crop_padded = cv.copyMakeBorder(im_mask_crop, y1_pad, y2_pad, x1_pad, x2_pad, cv.BORDER_CONSTANT)
+        # print("mask pad vals: ", y1_pad, y2_pad, x1_pad, x2_pad)
 
-    elif isinstance(seg_mask, torch.Tensor):
+    elif isinstance(im_mask_crop, torch.Tensor):
+        # this implementation is wrong
         mask_crop_padded = torch.nn.functional.pad(im_mask_crop, (y1_pad, y2_pad, x1_pad, x2_pad), value=0)
 
     # Attention mask
@@ -181,19 +190,28 @@ def sample_image_seg(im, seg_mask=None, bbox=None, search_area_factor=None, outp
         resize_factor_W = output_sz/W
 
         if isinstance(im_crop_padded, np.ndarray):
-            im_crop_padded = cv.resize(im_crop_padded, (output_sz,output_sz))
+            im_crop_padded = cv.resize(im_crop_padded, (output_sz,output_sz), interpolation=cv.INTER_CUBIC)
             att_mask = cv.resize(att_mask,(output_sz, output_sz)).astype(np.bool_)
 
         elif isinstance(im_crop_padded, torch.Tensor):
             im_crop_padded = torch.nn.functional.interpolate(im_crop_padded, size=(output_sz, output_sz), mode='bilinear', align_corners=False)
             att_mask = torch.nn.functional.interpolate(im_crop_padded, size=(output_sz,output_sz), mode='bilinear', align_corners=False)
 
-
+        mask_crop_padded = torch.tensor(mask_crop_padded)
         if isinstance(mask_crop_padded, np.ndarray):
-            mask_crop_padded = cv.resize(mask_crop_padded, (output_sz, output_sz))
+            mask_crop_padded = cv.resize(mask_crop_padded, (output_sz, output_sz), interpolation=cv.INTER_NEAREST)
         elif isinstance(mask_crop_padded, torch.Tensor):
             mask_crop_padded = torch.nn.functional.interpolate(mask_crop_padded.unsqueeze(0).unsqueeze(0), size=(output_sz, output_sz),
-                                                               mode='bilinear', align_corners=False)
+                                                               mode='bilinear', align_corners=True)
+
+        # # plot the cropped image and mask
+        # fig, axs = plt.subplots(1, 2)
+        # rgb_mask = torch.tensor(mask_crop_padded.squeeze(0).squeeze(0)).unsqueeze(0).repeat(1, 3, 1, 1).permute(0, 2, 3, 1).detach().cpu().numpy().astype(np.uint8) * 255
+        # overlay = cv.addWeighted(im_crop_padded, 1, rgb_mask[0], 0.5, 0)
+        # axs[0].imshow(overlay)
+        # axs[1].imshow(mask_crop_padded.squeeze(0).squeeze(0))
+        # plt.show()
+
 
         return im_crop_padded, resize_factor_W, resize_factor_H, att_mask, mask_crop_padded, data_invalid, bbox
 def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, output_sz=None, data_invalid=False):
