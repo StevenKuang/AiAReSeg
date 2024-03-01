@@ -15,7 +15,6 @@ import argparse
 import os
 from tqdm import tqdm
 
-FRAME_RATE = 30
 
 
 def read_flo(file):
@@ -79,18 +78,20 @@ if __name__ == '__main__':
     # parser.add_argument('--out', type=str, default=None, help='Path to save the output image. If None, output will not be saved')
     args = parser.parse_args()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     root_dir = os.path.join(args.dataset)
+    # root_dir = os.path.join('/media/liming/Data/IDP/dataset/us_phantom')
     # out_file = os.path.join(root_dir, "bboxes")
     flow_folder_name = "flow_cactuss_flownet2"
-    store = True
-
+    store = False
+    im_shape = (600, 800, 3)
 
     # loop through the folders in the root directory
     for cath_dir_name in os.listdir(root_dir):
         cath_dir = os.path.join(root_dir, cath_dir_name, flow_folder_name)
         scan_num_str = cath_dir_name.split('_')[-1]
         scan_num = int(scan_num_str)
-        out_file_path = os.path.join(root_dir, cath_dir_name, "bboxes_1.pt")
+        out_file_path = os.path.join(root_dir, cath_dir_name, "bboxes.pt")
         if os.path.exists(out_file_path) and store:
             overwrite = input(f"File {out_file_path} already exists. Overwrite? (y/n)")
             if overwrite.lower() != 'y':
@@ -109,7 +110,12 @@ if __name__ == '__main__':
                     file_num = int(file.split('_')[-1].split('.')[0])
                     flow = flow_utils.read_gen(os.path.join(seq_dir, file))
                     flow_tensor = torch.tensor(flow)
-
+                    # pad the flow tensor to match the image (600, 800)
+                    flow = torch.nn.functional.pad(flow_tensor, (0, 0,
+                                                          (im_shape[1] - flow.shape[1]) // 2,
+                                                          (im_shape[1] - flow.shape[1]) // 2,
+                                                          (im_shape[0] - flow.shape[0]) // 2,
+                                                          (im_shape[0] - flow.shape[0]) // 2))
                     flow_tensor.to(device)
                     bounding_box = x1y1x2y2_to_x1y1wh(prutils.flows_to_boxes(flow_tensor.unsqueeze(0)))
                     bboxes[seq_num, file_num] = bounding_box

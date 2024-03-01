@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 from lib.test.evaluation.data import Sequence, BaseDataset, SequenceList
 from lib.test.utils.load_text import load_text
@@ -30,13 +31,18 @@ class CatheterTransSegDataset(BaseDataset):
             self.trim_rule = [30, 40, 30, 15]
         elif subset == 'Val':
             self.simu_list = ["21"]
-            self.trim_rule = [30]       # min:2 factor:0.5
+            self.trim_rule = [30]
             # self.simu_list = ["01"]
-            # self.trim_rule = [60]
+            # self.trim_rule = [50]
             # self.simu_list = ["31"]
-            # self.trim_rule = [60]
+            # self.trim_rule = [90]
             # self.simu_list = ["31"]
-            # self.trim_rule = [20]   # problematic
+            # self.trim_rule = [50]
+
+            # # phantom test
+            # self.simu_list = ["02"]
+            # self.trim_rule = [1]
+
         else:
             AttributeError("The mode is not recognized")
 
@@ -44,7 +50,10 @@ class CatheterTransSegDataset(BaseDataset):
         self.bboxes_dic = {}
         for i in range(len(self.simu_list)):
             simu = self.simu_list[i]
-            curr_root = join(self.base_path, "rotations_transverse_" + simu + '/')
+            if 'phantom' in self.base_path:
+                curr_root = join(self.base_path, "phantom_transverse_" + simu + '/')
+            else:
+                curr_root = join(self.base_path, "rotations_transverse_" + simu + '/')
             roots.append(curr_root)
             bbox_file = join(curr_root, "bboxes.pt")
             if os.path.exists(bbox_file):
@@ -59,7 +68,7 @@ class CatheterTransSegDataset(BaseDataset):
         self.height = 320
         self.width = 320
         self._set_height_width()
-        self.clean_list = self.clean_seq_list()     # not used anywhere
+        # self.clean_list = self.clean_seq_list()     # not used anywhere
 
 
     # A clean sequence list method that grabs the class of each sequence, in our case there is only one class
@@ -210,10 +219,15 @@ class CatheterTransSegDataset(BaseDataset):
         frames_path = os.path.join(self.data_path, sequence_name)
 
         # find the first valid bbox
+        first_flow_path = join(seq_path.replace("filtered", "flow_cactuss_flownet2"), f"000000.flo")
+        first_flow = torch.tensor(flow_utils.read_gen(first_flow_path))
+        flow_w, flow_h = first_flow.shape[:2]
         init_frame_id = None
         init_bbox = None
-        for i in range(len(self.bboxes_dic[class_name.split('_')[-1]][sequence_number])):
-            if self.bboxes_dic[class_name.split('_')[-1]][sequence_number][i].sum() != 0:
+        frame_trim = 50          # 150 has some result
+        for i in range(frame_trim, len(self.bboxes_dic[class_name.split('_')[-1]][sequence_number])):
+            curr_box = self.bboxes_dic[class_name.split('_')[-1]][sequence_number][i]
+            if 30*30 < curr_box[2] * curr_box[3] < flow_w * flow_h / 4:
                 init_frame_id = i
                 init_bbox = self.bboxes_dic[class_name.split('_')[-1]][sequence_number][i]
                 break
@@ -222,22 +236,37 @@ class CatheterTransSegDataset(BaseDataset):
 
         gt_flow_path = join(seq_path.replace("filtered", "flow_cactuss_flownet2"), f"{init_frame_id:06d}.flo")
         gt_flow = torch.tensor(flow_utils.read_gen(gt_flow_path))
+
         threshold = 0.2
         # create a binary mask from flow
         mask_u = gt_flow.abs()[:, :, 0] > threshold
         mask_v = gt_flow.abs()[:, :, 1] > threshold
         ground_truth_mask_from_flow = (mask_u | mask_v).float().unsqueeze(0)
         ground_truth_mask = {init_frame_id: dict()}
+
         # pad the mask to the same size as the image
         if ground_truth_mask_from_flow.shape != torch.Size((1, self.height, self.width)):
-            ground_truth_mask_from_flow = torch.nn.functional.interpolate(ground_truth_mask_from_flow.unsqueeze(0), (self.height, self.width))
-            ground_truth_mask_from_flow = ground_truth_mask_from_flow.squeeze(0)
-        ground_truth_mask[init_frame_id]['mask'] = ground_truth_mask_from_flow.squeeze(0)
+            # ground_truth_mask_from_flow = torch.nn.functional.interpolate(ground_truth_mask_from_flow.unsqueeze(0), (self.height, self.width))
+            # use padding instead of interpolation
+            ground_truth_mask_from_flow = torch.nn.functional.pad(ground_truth_mask_from_flow.unsqueeze(0), ((self.width - ground_truth_mask_from_flow.shape[2]) // 2, (self.width - ground_truth_mask_from_flow.shape[2]) // 2, (self.height - ground_truth_mask_from_flow.shape[1]) // 2, (self.height - ground_truth_mask_from_flow.shape[1]) // 2))
+            ground_truth_mask_from_flow = ground_truth_mask_from_flow.squeeze(0).squeeze(0)
+            ground_truth_mask_from_flow = self.extract_largest_component(ground_truth_mask_from_flow)
+
+        # smooth the mask from flow
+        # ground_truth_mask_from_flow = smooth_mask_batch(ground_truth_mask_from_flow.unsqueeze(0).unsqueeze(0)).squeeze(0).squeeze(0)
+
+        ground_truth_mask[init_frame_id]['mask'] = ground_truth_mask_from_flow
         ground_truth_mask[init_frame_id]['bbox'] = init_bbox
-        #ground_truth_rect = self._read_bb_anno(seq_path)
-        # ground_truth_mask = self._read_mask_anno(seq_path)
-        #ground_truth_rect = None
+
         seq_len = self._get_seq_len(sequence_number)
+
+        # image = cv2.cvtColor(cv2.imread(os.path.join(frames_path, f"{init_frame_id:06d}.png")), cv2.COLOR_BGR2RGB)
+        # # plot the mask for dubugging
+        # rgb_mask = torch.tensor(ground_truth_mask_from_flow).unsqueeze(0).repeat(1, 3, 1, 1)
+        # rgb_mask = rgb_mask.permute(0, 2, 3, 1).detach().cpu().numpy().astype(np.uint8) * 255
+        # overlay = cv2.addWeighted(image, 1, rgb_mask[0], 0.5, 0)
+        # plt.imshow(overlay)
+        # plt.show()
 
         print("Folder: " + frames_path + "\nInit frame id: " + str(init_frame_id))
         # The number of zeros will depend on the number of frames in the folder
@@ -278,8 +307,59 @@ class CatheterTransSegDataset(BaseDataset):
                 return
 
 
+    def extract_largest_component(self, mask):
+        """
+        Extract the largest connected component from a binary segmentation mask.
+
+        :param mask: Binary mask as a numpy ndarray of shape (H, W).
+        :return: Mask with only the largest connected component.
+        """
+        # Ensure mask is a binary image of type uint8
+        mask = np.uint8(mask)
+
+        # Find connected components
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 4, cv2.CV_32S)
+
+        # Skip the background label at index 0
+        sizes = stats[1:, -1]
+        # maybe smart selection here, not always the largest,
+        # but the one that has the most overlap with the previous bbox
+        largest_label = 1 + np.argmax(sizes)
+
+        # Create a new mask for the largest connected component
+        largest_component = np.zeros_like(mask)
+        largest_component[labels == largest_label] = 1.0
+
+        return torch.tensor(largest_component).float()
+
+def smooth_contours(mask, sigmaX=4):
+    # Assume mask is a 2D numpy array of type float32 with values in range [0, 1]
+    # Convert the mask to uint8 format with values in range [0, 255]
+    mask_np = (mask.squeeze(0).cpu().numpy() * 255).astype(np.uint8)
+
+    # Find the contours of the mask
+    contours, _ = cv2.findContours(mask_np, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    smoothed_mask = np.zeros_like(mask_np)
+    cv2.drawContours(smoothed_mask, contours, -1, (255), thickness=cv2.FILLED)
+
+    smoothed_mask = cv2.GaussianBlur(smoothed_mask, (0, 0), sigmaX)
+    _, smoothed_mask = cv2.threshold(smoothed_mask, 127, 1, cv2.THRESH_BINARY)
+
+    return smoothed_mask.astype(np.float32)
 
 
+def smooth_mask_batch(batch_tensor, sigmaX=4):
+    #  batch_tensor has shape (B, 1, H, W)
+    smoothed_batch = []
+
+    for mask_tensor in batch_tensor:
+        smoothed_mask_np = smooth_contours(mask_tensor, sigmaX)
+        smoothed_mask_tensor = torch.from_numpy(smoothed_mask_np).unsqueeze(0)
+        smoothed_batch.append(smoothed_mask_tensor)
+
+    smoothed_batch_tensor = torch.stack(smoothed_batch)
+
+    return smoothed_batch_tensor
 
 # if "__main__" == __name__:
 #

@@ -45,7 +45,7 @@ class Sequence:
         self.target_visible = target_visible
         self.object_ids = object_ids
         self.multiobj_mode = multiobj_mode
-        if "rotations" in self.name:
+        if "transverse" in self.name:
             self.init_data = self.ground_truth_seg
         else:
             self.init_data = self._construct_init_data(init_data)
@@ -62,7 +62,7 @@ class Sequence:
                         self.ground_truth_rect[obj_id] = gt[start_frame:, :]
                 else:
                     self.ground_truth_rect = self.ground_truth_rect[start_frame:, :]
-            if self.ground_truth_seg is not None and "rotations" not in self.name:
+            if self.ground_truth_seg is not None and "transverse" not in self.name:
                 self.ground_truth_seg = self.ground_truth_seg[start_frame:]
                 assert len(self.frames) == len(self.ground_truth_seg)
 

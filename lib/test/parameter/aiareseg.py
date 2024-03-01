@@ -33,8 +33,10 @@ def parameters(yaml_name: str):
     aiareseg_checkpoint = 'pretrained_networks/AIATRACK_ep0500.pth.tar'
     # unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/unsup_best/AIARESEG_ep0583_old.pth.tar'
     unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/unsup_best/AIARESEG_ep0585.pth.tar'           # best thus far, trained from 500, lr 0,001
-    # unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/AIARESEG_ep0454.pth.tar'
+    # unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/unsup_best/AIARESEG_ep0547_fullframe.pth.tar'
+    # unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/unsup_best/AIARESEG_ep0454.pth.tar'
     # unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/unsup_best/AIARESEG_ep0379_sup.pth.tar'
+    unsupaia_checkpoint = 'checkpoints/train/aiareseg/AiASeg_unsupervised/unsup_best/AIARESEG_ep0362_300.pth.tar'
     params.checkpoint = os.path.join(work_dir, unsupaia_checkpoint)
     # Whether to save boxes from all queries
     params.save_all_boxes = False

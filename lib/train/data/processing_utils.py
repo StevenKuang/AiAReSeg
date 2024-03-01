@@ -204,6 +204,9 @@ def sample_image_seg(im, seg_mask=None, bbox=None, search_area_factor=None, outp
             mask_crop_padded = torch.nn.functional.interpolate(mask_crop_padded.unsqueeze(0).unsqueeze(0), size=(output_sz, output_sz),
                                                                mode='bilinear', align_corners=True)
 
+        # # smoothe the mask with contour and gaussian blur
+        # mask_crop_padded = smooth_mask_batch(mask_crop_padded)
+
         # # plot the cropped image and mask
         # fig, axs = plt.subplots(1, 2)
         # rgb_mask = torch.tensor(mask_crop_padded.squeeze(0).squeeze(0)).unsqueeze(0).repeat(1, 3, 1, 1).permute(0, 2, 3, 1).detach().cpu().numpy().astype(np.uint8) * 255
@@ -243,7 +246,7 @@ def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, ou
     else:
         x, y, w, h = bbox
 
-    # Lets plot both the image and the bounding box
+    # # Lets plot both the image and the bounding box
     # fig, ax = plt.subplots(1,2, figsize=(20,20))
     # ax[0].imshow(im)
     #
@@ -296,6 +299,11 @@ def sample_image_unsup_seg(im, flow=None, bbox=None, search_area_factor=None, ou
     # Crop the target flow as well
     if isinstance(flow,list) or isinstance(flow,tuple):
         flow = flow[0]
+
+    # first pad the flow so it has the same size as the image
+    flow = torch.nn.functional.pad(flow, (0, 0,
+                                  (im.shape[1] - flow.shape[1]) // 2, (im.shape[1] - flow.shape[1]) // 2,
+                                    (im.shape[0] - flow.shape[0]) // 2, (im.shape[0] - flow.shape[0]) // 2))
 
     im_flow_crop = flow[y1 + y1_pad:y2 - y2_pad, x1 + x1_pad:x2 - x2_pad, :]
     # # plot the cropped flow
@@ -634,7 +642,7 @@ def flows_to_boxes(flows: torch.Tensor) -> torch.Tensor:
 
     # Get the bounding box
     bounding_boxes = torch.zeros((num_flows, 4), device=flows.device, dtype=torch.float)
-    threshold = 0.3
+    threshold = 0.5     # for real data this needs to be 1, syth can use 0.5 or 0.2
     for index, flow in enumerate(flows):
         v, u, _ = torch.where(torch.abs(flow) > threshold)
         # print('u:' + str(u.shape) + 'v:' + str(v.shape))
@@ -674,6 +682,35 @@ def expand_box_edge(bounding_box, frame_height, frame_width, factor = 0.1):
         new_bounding_box[3] = min(frame_height, new_bounding_box[3] + int(diff))
     return new_bounding_box
 
+
+def smooth_contours(mask, sigmaX=4):
+    # Assume mask is a 2D numpy array of type float32 with values in range [0, 1]
+    # Convert the mask to uint8 format with values in range [0, 255]
+    mask_np = (mask.squeeze(0).cpu().numpy() * 255).astype(np.uint8)
+
+    # Find the contours of the mask
+    contours, _ = cv.findContours(mask_np, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    smoothed_mask = np.zeros_like(mask_np)
+    cv.drawContours(smoothed_mask, contours, -1, (255), thickness=cv.FILLED)
+
+    smoothed_mask = cv.GaussianBlur(smoothed_mask, (0, 0), sigmaX)
+    _, smoothed_mask = cv.threshold(smoothed_mask, 127, 1, cv.THRESH_BINARY)
+
+    return smoothed_mask.astype(np.float32)
+
+
+def smooth_mask_batch(batch_tensor, sigmaX=4):
+    #  batch_tensor has shape (B, 1, H, W)
+    smoothed_batch = []
+
+    for mask_tensor in batch_tensor:
+        smoothed_mask_np = smooth_contours(mask_tensor, sigmaX)
+        smoothed_mask_tensor = torch.from_numpy(smoothed_mask_np).unsqueeze(0)
+        smoothed_batch.append(smoothed_mask_tensor)
+
+    smoothed_batch_tensor = torch.stack(smoothed_batch)
+
+    return smoothed_batch_tensor
 
 def visualize_flow_bbox(bounding_boxes, flows, mode='xywh'):
     for index, flow in enumerate(flows):

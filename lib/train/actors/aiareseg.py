@@ -308,6 +308,7 @@ class AIARESEGActor(BaseActor):
             return loss, status
         else:
             return loss
+
     def compute_losses_flow_seg(self,out_seg, data, return_status=True):
         """optical flow reconstruction loss from the guess what moves model"""
 
@@ -317,17 +318,23 @@ class AIARESEGActor(BaseActor):
         mask_u = flow.abs()[:, :, :, 0] > threshold
         mask_v = flow.abs()[:, :, :, 1] > threshold
         mask_from_flow = (mask_u | mask_v).float().unsqueeze(1)
+        # # smooth the edges of the mask
+        mask_from_flow = self.smooth_mask_batch(mask_from_flow, sigmaX=4)
 
         # # debug
         # # visualize the binary mask for debugging, if true then white else black
         # ori_img = data['search_images'][0]
+        # # denorm ori_img
+        # ori_img = (ori_img * torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(self.device)) + torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(self.device)
         # rgb_mask = torch.cat([mask_from_flow.squeeze(0), mask_from_flow.squeeze(0), mask_from_flow.squeeze(0)], dim=1).permute(0, 2, 3, 1).cpu().numpy() * 255
         # rgb_flow = torch.tensor(flow_utils.flow2img(flow[0].cpu().numpy())).float() / 255.0
         # fig, axs = plt.subplots(1, 3)
+        # overlay = cv2.addWeighted(ori_img[0].permute(1, 2, 0).cpu().numpy(), 1, rgb_mask[0], 0.2, 0)
         # axs[0].imshow(rgb_mask[0])
         # axs[1].imshow(rgb_flow)
-        # axs[2].imshow(ori_img[0].permute(1, 2, 0).cpu().numpy())
+        # axs[2].imshow(overlay)
         # plt.show()
+
         if self.cfg.TRAIN.USE_RECONSTRUCTION <= 1:
             loss, status = self.compute_losses_seg(out_seg, mask_from_flow, return_status)
             if self.cfg.TRAIN.USE_RECONSTRUCTION < 1:
@@ -384,7 +391,34 @@ class AIARESEGActor(BaseActor):
             return loss, status
         else:
             return loss
-        
+
+    def smooth_contours(self, mask, sigmaX=4):
+        # Assume mask is a 2D numpy array of type float32 with values in range [0, 1]
+        # Convert the mask to uint8 format with values in range [0, 255]
+        mask_np = (mask.squeeze(0).cpu().numpy() * 255).astype(np.uint8)
+
+        # Find the contours of the mask
+        contours, _ = cv2.findContours(mask_np, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        smoothed_mask = np.zeros_like(mask_np)
+        cv2.drawContours(smoothed_mask, contours, -1, (255), thickness=cv2.FILLED)
+
+        smoothed_mask = cv2.GaussianBlur(smoothed_mask, (0, 0), sigmaX)
+        _, smoothed_mask = cv2.threshold(smoothed_mask, 127, 1, cv2.THRESH_BINARY)
+
+        return smoothed_mask.astype(np.float32)
+
+    def smooth_mask_batch(self, batch_tensor, sigmaX=4):
+        #  batch_tensor has shape (B, 1, H, W)
+        smoothed_batch = []
+
+        for mask_tensor in batch_tensor:
+            smoothed_mask_np = self.smooth_contours(mask_tensor, sigmaX)
+            smoothed_mask_tensor = torch.from_numpy(smoothed_mask_np).unsqueeze(0)
+            smoothed_batch.append(smoothed_mask_tensor)
+
+        smoothed_batch_tensor = torch.stack(smoothed_batch)
+
+        return smoothed_batch_tensor.to(self.device)
 
     def find_centroid(self, mask):
         """Grab a mask, and then generate the centroid of that mask, the mask will have a dimension of (8, 1, 320, 320)"""

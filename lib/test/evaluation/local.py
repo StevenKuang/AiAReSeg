@@ -27,8 +27,8 @@ def local_env_settings():
     # settings.catheterseg_path = '/media/liming/Data/IDP/dataset/new_axial_dataset_dilated2'
     settings.catheterseg_path= '/home/liming/Documents/new_axial_dataset_dilated2'
     settings.cathetertransseg_path = DATASET_ROOT + '/us_simulation3_cactuss'
-    #settings.catheterseg_path = "/media/atr17/HDD Storage/US_axial_data_shallower_V2"
-    #settings.catheterseg_path = "/media/atr17/HDD Storage/US_axial_phantom_data"
+    # settings.cathetertransseg_path = DATASET_ROOT + '/us_phantom'
+
     # settings.network_path = PATH + '/AiAReSeg/test/networks'  # Where tracking networks are stored
     settings.network_path = PATH + '/AiAReSeg/pretrained_networks'  # Where tracking networks are stored
     settings.nfs_path = PATH + '/NFS30'
