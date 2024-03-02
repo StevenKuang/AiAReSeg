@@ -87,7 +87,6 @@ class LTRTrainer(BaseTrainer):
                 #     if value.grad is not None:
                 #         print(value.grad.cpu())
 
-
                 # monitor gradients before clipping
                 # gradients = np.array([p.grad.norm().item() for p in self.actor.net.parameters() if p.grad is not None])
                 # print(f'Mean gradient norm before clip: {np.mean(gradients)}')

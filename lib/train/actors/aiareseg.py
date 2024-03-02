@@ -319,7 +319,7 @@ class AIARESEGActor(BaseActor):
         mask_v = flow.abs()[:, :, :, 1] > threshold
         mask_from_flow = (mask_u | mask_v).float().unsqueeze(1)
         # # smooth the edges of the mask
-        mask_from_flow = self.smooth_mask_batch(mask_from_flow, sigmaX=4)
+        # mask_from_flow = self.smooth_mask_batch(mask_from_flow, sigmaX=4)
 
         # # debug
         # # visualize the binary mask for debugging, if true then white else black

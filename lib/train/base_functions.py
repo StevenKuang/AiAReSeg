@@ -157,7 +157,7 @@ def get_optimizer_scheduler(net, cfg):
 
     if cfg.TRAIN.SCHEDULER.TYPE == 'cosine':
         iter_per_epoch = int(np.floor(cfg.DATA.TRAIN.SAMPLE_PER_EPOCH / cfg.TRAIN.BATCH_SIZE))
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=iter_per_epoch * cfg.TRAIN.SCHEDULER.T0_EPOCH,
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=cfg.TRAIN.SCHEDULER.T0_EPOCH,
                                                                             T_mult=cfg.TRAIN.SCHEDULER.T_MULT, eta_min=cfg.TRAIN.SCHEDULER.MIN_LR)
         # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.TRAIN.EPOCH * iter_per_epoch,
         #                                                           eta_min=cfg.TRAIN.SCHEDULER.MIN_LR)

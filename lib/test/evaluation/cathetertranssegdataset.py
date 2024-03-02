@@ -224,7 +224,7 @@ class CatheterTransSegDataset(BaseDataset):
         flow_w, flow_h = first_flow.shape[:2]
         init_frame_id = None
         init_bbox = None
-        frame_trim = 50          # 150 has some result
+        frame_trim = 0          # 150 has some result
         for i in range(frame_trim, len(self.bboxes_dic[class_name.split('_')[-1]][sequence_number])):
             curr_box = self.bboxes_dic[class_name.split('_')[-1]][sequence_number][i]
             if 30*30 < curr_box[2] * curr_box[3] < flow_w * flow_h / 4:
