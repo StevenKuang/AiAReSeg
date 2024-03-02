@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch.utils.data.distributed import DistributedSampler
 
@@ -154,6 +155,15 @@ def get_optimizer_scheduler(net, cfg):
 
     optimizer = torch.optim.AdamW(param_dicts, lr=cfg.TRAIN.LR, weight_decay=cfg.TRAIN.WEIGHT_DECAY)
 
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, cfg.TRAIN.LR_DROP_EPOCH)
+    if cfg.TRAIN.SCHEDULER.TYPE == 'cosine':
+        iter_per_epoch = int(np.floor(cfg.DATA.TRAIN.SAMPLE_PER_EPOCH / cfg.TRAIN.BATCH_SIZE))
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=iter_per_epoch * cfg.TRAIN.SCHEDULER.T0_EPOCH,
+                                                                            T_mult=cfg.TRAIN.SCHEDULER.T_MULT, eta_min=cfg.TRAIN.SCHEDULER.MIN_LR)
+        # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.TRAIN.EPOCH * iter_per_epoch,
+        #                                                           eta_min=cfg.TRAIN.SCHEDULER.MIN_LR)
+    elif cfg.TRAIN.SCHEDULER.TYPE == 'step':
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, cfg.TRAIN.LR_DROP_EPOCH)
+    else:
+        raise ValueError('Unknown scheduler type: %s' % cfg.TRAIN.SCHEDULER.TYPE)
 
     return optimizer, lr_scheduler

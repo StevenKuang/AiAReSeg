@@ -38,7 +38,7 @@ cfg.TRAIN.RESUME = False
 cfg.TRAIN.LR = 0.0001           # 0.0001
 cfg.TRAIN.WEIGHT_DECAY = 0.0001
 cfg.TRAIN.EPOCH = 500
-cfg.TRAIN.LR_DROP_EPOCH = 400
+cfg.TRAIN.LR_DROP_EPOCH = 60 # 400
 cfg.TRAIN.BATCH_SIZE = 20
 cfg.TRAIN.NUM_WORKER = 0
 cfg.TRAIN.OPTIMIZER = 'ADAMW'
@@ -63,6 +63,10 @@ cfg.TRAIN.GRAD_CLIP_NORM = 0.1
 cfg.TRAIN.SCHEDULER = edict()
 cfg.TRAIN.SCHEDULER.TYPE = 'step'
 cfg.TRAIN.SCHEDULER.DECAY_RATE = 0.1
+# TRAIN.SCHEDULER.COSINE
+cfg.TRAIN.SCHEDULER.MIN_LR = 0.00001
+cfg.TRAIN.SCHEDULER.T_MULT = 2
+cfg.TRAIN.SCHEDULER.T0_EPOCH = 5
 
 
 # DATA
@@ -143,80 +147,80 @@ def update_config_from_file(filename):
         _update_config(cfg, exp_config)
 
 
-def add_gwm_config(cfg):
-    cfg.GWM = edict()
-    cfg.GWM.MODEL = "AIARESEG"
-    cfg.GWM.RESOLUTION = (320, 320)
-    # cfg.GWM.RESOLUTION = (300, 400)
-    cfg.GWM.FLOW_RES = (320, 320)
-    cfg.GWM.SAMPLE_KEYS = ["rgb"]
-    cfg.GWM.ADD_POS_EMB = False
-    cfg.GWM.CRITERION = "L2"
-    cfg.GWM.L1_OPTIMIZE = False
-    cfg.GWM.HOMOGRAPHY = 'quad'  # False
-    cfg.GWM.HOMOGRAPHY_SUBSAMPLE = 8
-    cfg.GWM.HOMOGRAPHY_SKIP = 0.4
-    cfg.GWM.DATASET = 'DAVIS'
-    cfg.GWM.DATA_ROOT = None
-    cfg.GWM.FLOW2RGB = False
-    cfg.GWM.SIMPLE_REC = False
-    cfg.GWM.DAVIS_SINGLE_VID = None
-    cfg.GWM.USE_MULT_FLOW = False
-    cfg.GWM.FLOW_COLORSPACE_REC = None
-
-    cfg.GWM.DATA_ROOT = '/media/liming/Data/IDP/dataset'
-
-    cfg.GWM.FLOW_CLIP_U_LOW = float('-inf')
-    cfg.GWM.FLOW_CLIP_U_HIGH = float('inf')
-    cfg.GWM.FLOW_CLIP_V_LOW = float('-inf')
-    cfg.GWM.FLOW_CLIP_V_HIGH = float('inf')
-
-    cfg.GWM.FLOW_CLIP = float('inf')
-    cfg.GWM.FLOW_NORM = False
-
-    cfg.GWM.LOSS_MULT = edict()
-    cfg.GWM.LOSS_MULT.REC = 1.0
-    cfg.GWM.LOSS_MULT.HEIR_W = [0.1, 0.3, 0.6]
-
-
-    cfg.GWM.TTA = 100  # Test-time-adaptation
-    cfg.GWM.TTA_AS_TRAIN = False  # Use train-like data logic for test-time-adaptation
-
-    cfg.GWM.LOSS = 'OG'
-
-    cfg.FLAGS = edict()
-    cfg.FLAGS.MAKE_VIS_VIDEOS = False  # Making videos is kinda slow
-    cfg.FLAGS.EXTENDED_FLOW_RECON_VIS = False  # Does not cost much
-    cfg.FLAGS.COMP_NLL_FOR_GT = False  # Should we log loss against ground truth?
-    cfg.FLAGS.DEV_DATA = False
-    cfg.FLAGS.KEEP_ALL = True  # Keep all checkoints
-    cfg.FLAGS.ORACLE_CHECK = False  # Use oracle check to estimate max performance when grouping multiple components
-
-    cfg.FLAGS.INF_TPS = False
-
-    # cfg.FLAGS.UNFREEZE_AT = [(1, 10000), (0, 20000), (-1, 30000)]
-    # cfg.FLAGS.UNFREEZE_AT = [(4, 0), (2, 500), (1, 1000), (-1, 10000)]
-
-    cfg.FLAGS.IGNORE_SIZE_DIV = False
-
-    cfg.FLAGS.IGNORE_TMP = True
-
-    cfg.WANDB = edict()
-    cfg.WANDB.ENABLE = True
-    cfg.WANDB.BASEDIR = '../'
-
-    cfg.DEBUG = False
-
-    cfg.LOG_ID = 'exp'
-    cfg.LOG_FREQ = 250
-    cfg.OUTPUT_BASEDIR = '../outputs'
-    cfg.SLURM = False
-    cfg.SKIP_TB = False
-    cfg.TOTAL_ITER = 20000
-    cfg.CONFIG_FILE = None
-
-    if os.environ.get('SLURM_JOB_ID', None):
-        cfg.LOG_ID = os.environ.get('SLURM_JOB_NAME', cfg.LOG_ID)
-        # logger.info(f"Setting name {cfg.LOG_ID} based on SLURM job name")
-
-add_gwm_config(cfg)
+# def add_gwm_config(cfg):
+#     cfg.GWM = edict()
+#     cfg.GWM.MODEL = "AIARESEG"
+#     cfg.GWM.RESOLUTION = (320, 320)
+#     # cfg.GWM.RESOLUTION = (300, 400)
+#     cfg.GWM.FLOW_RES = (320, 320)
+#     cfg.GWM.SAMPLE_KEYS = ["rgb"]
+#     cfg.GWM.ADD_POS_EMB = False
+#     cfg.GWM.CRITERION = "L2"
+#     cfg.GWM.L1_OPTIMIZE = False
+#     cfg.GWM.HOMOGRAPHY = 'quad'  # False
+#     cfg.GWM.HOMOGRAPHY_SUBSAMPLE = 8
+#     cfg.GWM.HOMOGRAPHY_SKIP = 0.4
+#     cfg.GWM.DATASET = 'DAVIS'
+#     cfg.GWM.DATA_ROOT = None
+#     cfg.GWM.FLOW2RGB = False
+#     cfg.GWM.SIMPLE_REC = False
+#     cfg.GWM.DAVIS_SINGLE_VID = None
+#     cfg.GWM.USE_MULT_FLOW = False
+#     cfg.GWM.FLOW_COLORSPACE_REC = None
+#
+#     cfg.GWM.DATA_ROOT = '/media/liming/Data/IDP/dataset'
+#
+#     cfg.GWM.FLOW_CLIP_U_LOW = float('-inf')
+#     cfg.GWM.FLOW_CLIP_U_HIGH = float('inf')
+#     cfg.GWM.FLOW_CLIP_V_LOW = float('-inf')
+#     cfg.GWM.FLOW_CLIP_V_HIGH = float('inf')
+#
+#     cfg.GWM.FLOW_CLIP = float('inf')
+#     cfg.GWM.FLOW_NORM = False
+#
+#     cfg.GWM.LOSS_MULT = edict()
+#     cfg.GWM.LOSS_MULT.REC = 1.0
+#     cfg.GWM.LOSS_MULT.HEIR_W = [0.1, 0.3, 0.6]
+#
+#
+#     cfg.GWM.TTA = 100  # Test-time-adaptation
+#     cfg.GWM.TTA_AS_TRAIN = False  # Use train-like data logic for test-time-adaptation
+#
+#     cfg.GWM.LOSS = 'OG'
+#
+#     cfg.FLAGS = edict()
+#     cfg.FLAGS.MAKE_VIS_VIDEOS = False  # Making videos is kinda slow
+#     cfg.FLAGS.EXTENDED_FLOW_RECON_VIS = False  # Does not cost much
+#     cfg.FLAGS.COMP_NLL_FOR_GT = False  # Should we log loss against ground truth?
+#     cfg.FLAGS.DEV_DATA = False
+#     cfg.FLAGS.KEEP_ALL = True  # Keep all checkoints
+#     cfg.FLAGS.ORACLE_CHECK = False  # Use oracle check to estimate max performance when grouping multiple components
+#
+#     cfg.FLAGS.INF_TPS = False
+#
+#     # cfg.FLAGS.UNFREEZE_AT = [(1, 10000), (0, 20000), (-1, 30000)]
+#     # cfg.FLAGS.UNFREEZE_AT = [(4, 0), (2, 500), (1, 1000), (-1, 10000)]
+#
+#     cfg.FLAGS.IGNORE_SIZE_DIV = False
+#
+#     cfg.FLAGS.IGNORE_TMP = True
+#
+#     cfg.WANDB = edict()
+#     cfg.WANDB.ENABLE = True
+#     cfg.WANDB.BASEDIR = '../'
+#
+#     cfg.DEBUG = False
+#
+#     cfg.LOG_ID = 'exp'
+#     cfg.LOG_FREQ = 250
+#     cfg.OUTPUT_BASEDIR = '../outputs'
+#     cfg.SLURM = False
+#     cfg.SKIP_TB = False
+#     cfg.TOTAL_ITER = 20000
+#     cfg.CONFIG_FILE = None
+#
+#     if os.environ.get('SLURM_JOB_ID', None):
+#         cfg.LOG_ID = os.environ.get('SLURM_JOB_NAME', cfg.LOG_ID)
+#         # logger.info(f"Setting name {cfg.LOG_ID} based on SLURM job name")
+#
+# add_gwm_config(cfg)

@@ -1,7 +1,7 @@
 import glob
 import os
 import traceback
-
+import wandb
 
 import torch
 from torch.utils.data.distributed import DistributedSampler
@@ -96,11 +96,14 @@ class BaseTrainer:
 
                     self.train_epoch()
 
+
+                    # print('lr/group0: ', self.lr_scheduler.get_lr()[0])
+                    # print('lr/group1: ', self.lr_scheduler.get_lr()[1])
                     if self.lr_scheduler is not None:
                         if self.settings.scheduler_type != 'cosine':
                             self.lr_scheduler.step()
-                        else:
-                            self.lr_scheduler.step(epoch - 1)
+                        # else:
+                        #     self.lr_scheduler.step(epoch - 1)
                     # Only save the last 5 checkpoints
                     #save_every_epoch = getattr(self.settings, 'save_every_epoch', False)
                     save_every_epoch = True

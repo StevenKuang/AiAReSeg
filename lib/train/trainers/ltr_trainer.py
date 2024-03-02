@@ -103,6 +103,22 @@ class LTRTrainer(BaseTrainer):
 
                 self.optimizer.step()
 
+                # print('lr/group0: ', self.lr_scheduler.get_lr()[0])
+                # print('lr/group1: ', self.lr_scheduler.get_lr()[1])
+                wandb.log({'lr/group0': self.lr_scheduler.get_lr()[0]})
+                wandb.log({'lr/group1': self.lr_scheduler.get_lr()[1]})
+
+                if self.lr_scheduler is not None:
+                    if self.settings.scheduler_type == 'cosine':
+                        # normal cosine annealing
+                        # self.lr_scheduler.step()
+                        # cosine annealing with warm restarts
+                        if self.epoch >= 500:
+                            self.lr_scheduler.step(self.epoch - 500 + i / limit)
+                        else:
+                            self.lr_scheduler.step(self.epoch + i / limit)
+
+
             # Update statistics
             batch_size = data['search_images'].shape[loader.stack_dim]
             self._update_stats(stats, batch_size, loader)
@@ -115,9 +131,7 @@ class LTRTrainer(BaseTrainer):
         if self.epoch >= 500:
             log_epoch = self.epoch - 500
         wandb.log({'epoch_loss': avg_epoch_loss / limit})
-        wandb.log({'learning_rate': self.optimizer.param_groups[0]['lr']})
-                   # 'epoch': log_epoch,
-                   # 'learning_rate': self.optimizer.param_groups[0]['lr']})
+
 
     def train_epoch(self):
         """
