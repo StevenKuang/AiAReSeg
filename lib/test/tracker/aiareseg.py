@@ -174,7 +174,7 @@ class AIARESEG(BaseTracker):
 
     def track(self, image, info: dict = None, seq_name: str = None, segmentation: bool = None):
         H, W, _ = image[0].shape
-        self.frame_id += 1
+        self.frame_id += 5
         # debug
         print(f"Frame {self.frame_id}" + f"\tLast valid {self.last_valid_frame}")
         # Get the t-th search region
@@ -184,13 +184,12 @@ class AIARESEG(BaseTracker):
         no_mask = True
         iter = 0
         valid_mask_count_req = 4 # minimum valid masks needed to present to form a merged mask # 2
-        max_mask_search_iter = 10  # for the first hit  # 10
-        max_mask_search_iter = 4  # for the first hit  # 10
+        max_mask_search_iter = 10  # for the first hit  # 10 # 5 for real data
         addi_mask_search_overhead = 5   # chances for finding additional masks
         out_full_mask = None
         first_valid_iter = None
         enlarge_factor = 0.5
-        self.params.search_factor = 1.2     # 1.5 as start may be too big
+        self.params.search_factor = 1.5  # 1.5 as start may be too big
         while no_mask == True:
             if segmentation == True:
                 if (0 <= iter < ((addi_mask_search_overhead + first_valid_iter) if first_valid_iter is not None else max_mask_search_iter)):
@@ -198,10 +197,14 @@ class AIARESEG(BaseTracker):
                     boxes = self.x1y1x2y2_to_x1y1wh(boxes)
                     # print(f"Multishot, iter {iter}")
                     # print(boxes)
-                    if boxes[2] < 20:
-                        boxes[2] = 30
-                    if boxes[3] < 20:
-                        boxes[3] = 30
+                    if boxes[2] < 50 and torch.sum(self.state[0]) < 2000:
+                        diff = 50 - boxes[2]
+                        boxes[0] -= diff // 2
+                        boxes[2] = 50
+                    if boxes[3] < 50 and torch.sum(self.state[0]) < 2000:
+                        diff = 50 - boxes[3]
+                        boxes[1] -= diff // 2
+                        boxes[3] = 50
                     boxes = [torch.tensor(boxes)]
                     invalid_frame_tolerance = 3
                     frame_diff = 0
@@ -802,23 +805,36 @@ class AIARESEG(BaseTracker):
         """
         # Ensure mask is a binary image of type uint8
         mask = np.uint8(mask)
-        bbox = bbox.tolist()
+        # find the largest connected component on the previous mask
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(prev_mask.cpu().numpy().astype(np.uint8), 4, cv2.CV_32S)
+        largest_label = np.argmax(stats[1:, -1]) + 1
+        prev_mask_largest_region = torch.tensor(labels == largest_label).float()
 
         # Find connected components
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 4, cv2.CV_32S)
         valid_labels = [False] * num_labels
         need_pca = False
         keep_prev = False
-        if num_labels > 2:
+        keep_prev_largest = False
+        possible_labels = [i for i in range(1, num_labels)]
+        # discard regions that are too small and does not overlap with previous mask
+        for i in range(1, num_labels):
+            if torch.sum(torch.tensor(labels == i).float()) < 50 and not torch.sum(prev_mask * torch.tensor(labels == i).float()) > 0:
+                possible_labels.remove(i)
+
+        if len(possible_labels) > 1:
             # Skip the background label at index 0
             valid_labels[0] = False
             sizes = stats[1:, -1]
 
             # Step 1: max overlap with previous mask, keep all components that has overlap with previous mask
-            overlap_threshold = 0.5
-            for i in range(1, num_labels):
-                if torch.sum(prev_mask * torch.tensor(labels == i).float()) > torch.sum(torch.tensor(labels == i).float()) * overlap_threshold:
+            overlap_threshold = 0.4
+            for i in possible_labels:
+                # if torch.sum(prev_mask_largest_region * torch.tensor(labels == i).float()) > torch.sum(torch.tensor(labels == i).float()) * overlap_threshold:
+                if torch.sum(prev_mask_largest_region * torch.tensor(labels == i).float()) > torch.sum(prev_mask_largest_region) * 0.5:
                     valid_labels[i] = True
+                    # keep_prev = True
+                    # keep_prev_largest = True
 
             if not any(valid_labels):
                 need_pca = True
@@ -849,60 +865,85 @@ class AIARESEG(BaseTracker):
                 mean = pca.mean_
                 # major axis
                 major_axis = components[0]
+                minor_axis = components[1]
+                # veritcal mirror the major axis
+                major_axis[1] = -major_axis[1]
+                minor_axis[1] = -minor_axis[1]
 
                 # find centeroids of connected components
                 projected_len = []
                 centroids = np.zeros((num_labels, 2))
-                for i in range(1, num_labels):
+                for i in possible_labels:
                     if sizes[i - 1] < 50:
                         continue
                     centroids[i] = self.calculate_centroid(labels == i)
-                    dir_vec = normalize([centroids[i] - prev_center]).ravel()
-                    projected_len.append(np.abs(np.dot(dir_vec, major_axis))/np.linalg.norm(major_axis))
+                    # dir_vec = normalize([centroids[i] - prev_center]).ravel()
+                    dir_vec = centroids[i] - prev_center
+                    # project to major axis
+                    # projected_len.append(np.abs(np.dot(dir_vec, major_axis))/np.linalg.norm(major_axis))
+                    # project to minor axis
+                    projected_len.append(np.abs(np.dot(dir_vec, minor_axis)))
 
-                valid_labels[np.argmax(projected_len) + 1] = True
+                if not any(projected_len):
+                    need_pca = False
+                    keep_prev = True
+                else:
+                    valid_labels[np.argmax(projected_len) + 1] = True
+                    # valid_labels[np.argmin(projected_len) + 1] = True
+                    keep_prev_largest = True
+                    keep_prev = True
 
+            # Step 3: if there's more than 1 valid label, we remove all labels that have no overlap with previous bbox
+            if sum(valid_labels) > 1:
+                for i in possible_labels:
+                    if valid_labels[i]:
+                        if not torch.sum(torch.tensor(labels == i)[int(bbox[1]):int(bbox[1] + bbox[3]), int(bbox[0]):int(bbox[0] + bbox[2])]) > 0:
+                            valid_labels[i] = False
 
         else:
             valid_labels[1] = True
 
-        # # Lets plot both the image and the bounding box
-        # fig, ax = plt.subplots(1, 1, figsize=(10, 10))
-        # rgb_mask = torch.tensor(mask).unsqueeze(0).unsqueeze(0).repeat(1, 3, 1, 1)
-        # rgb_mask = rgb_mask.permute(0, 2, 3, 1).detach().cpu().numpy().astype(np.uint8) * 255
-        # # for i in range(1, num_labels):
-        # #     rgb_mask[0][labels == i] = [0, 0, 255]
-        # # plot previous mask
-        # rgb_mask[0][prev_mask == 1] = [0, 255, 0]   # green
+
+        # Lets plot both the image and the bounding box
+        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+        rgb_mask = torch.tensor(mask).unsqueeze(0).unsqueeze(0).repeat(1, 3, 1, 1)
+        rgb_mask = rgb_mask.permute(0, 2, 3, 1).detach().cpu().numpy().astype(np.uint8) * 255
         # for i in range(1, num_labels):
-        #     if valid_labels[i]:
-        #         rgb_mask[0][labels == i] = [0, 255, 255]
-        # # rgb_mask[0][labels == largest_label] = [0, 255, 255]    # teal
-        # ax.imshow(rgb_mask[0])
-        # # rect = patches.Rectangle((int(bbox[0]), int(bbox[1])), int(bbox[2]), int(bbox[3]), linewidth=2, edgecolor='r',
-        # #                          facecolor='none')
-        # if need_pca:
-        #     # plt.scatter(centroids[1:, 1], centroids[1:, 0], c='r', s=40)
-        #     # plt.scatter(prev_center[1], prev_center[0], c='b', s=40)
-        #     plt.quiver(mean[0], mean[1], major_axis[0], major_axis[1], color='r', scale=5)  # red as major
-        #     plt.quiver(mean[0], mean[1], components[1, 0], components[1, 1], color='g', scale=5)
-        #
-        # # ax.add_patch(rect)
-        # plt.show()
+        #     rgb_mask[0][labels == i] = [0, 0, 255]
+        # plot previous mask
+        rgb_mask[0][prev_mask == 1] = [0, 255, 0]   # green
+        for i in possible_labels:
+            if valid_labels[i]:
+                rgb_mask[0][labels == i] = [0, 255, 255]
+        # rgb_mask[0][labels == largest_label] = [0, 255, 255]    # teal
+        ax.imshow(rgb_mask[0])
+        rect = patches.Rectangle((int(bbox[0]), int(bbox[1])), int(bbox[2]), int(bbox[3]), linewidth=2, edgecolor='r',
+                                 facecolor='none')
+        if need_pca:
+            plt.scatter(centroids[1:, 1], centroids[1:, 0], c='r', s=40)
+            plt.scatter(prev_center[1], prev_center[0], c='b', s=40)
+            plt.quiver(mean[0], mean[1], major_axis[0], major_axis[1], color='r', scale=5)  # red as major
+            plt.quiver(mean[0], mean[1], minor_axis[0], minor_axis[1], color='g', scale=5)
+
+        ax.add_patch(rect)
+        plt.show()
 
         # Create a new mask for the largest connected component
         largest_component = np.zeros_like(mask)
-        for i in range(1, num_labels):
+        for i in possible_labels:
             if valid_labels[i]:
                 largest_component[labels == i] = 1.0
         # largest_component[labels == largest_label] = 1.0
         largest_component = torch.tensor(largest_component).float()
 
         # If the largest component is too small, keep the previous mask
-        if torch.sum(largest_component) < 100:
+        if torch.sum(largest_component) < 200:
             keep_prev = True
         if keep_prev:
-            largest_component = torch.max(largest_component, prev_mask)
+            if keep_prev_largest:
+                largest_component = torch.max(largest_component, prev_mask_largest_region)
+            else:
+                largest_component = torch.max(largest_component, prev_mask)
         return largest_component
 def get_tracker_class():
     return AIARESEG

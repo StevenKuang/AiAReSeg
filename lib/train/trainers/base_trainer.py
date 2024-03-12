@@ -37,6 +37,7 @@ class BaseTrainer:
 
         self.epoch = 0
         self.stats = {}
+        self.init_epoch = 0
 
         self.device = getattr(settings, 'device', None)
         if self.device is None:
@@ -86,8 +87,10 @@ class BaseTrainer:
             try:
                 if load_latest:
                     # self.load_checkpoint(checkpoint=self.settings.env.pretrained_networks)
-                    max_epochs = max_epochs + 500
                     self.load_checkpoint()
+                    self.init_epoch = self.epoch
+                    max_epochs = max_epochs + self.epoch
+
 
                     # Here, you may decide to remove some of the weights in the final layer in order to get better training performance via transfer learning
 
@@ -274,6 +277,20 @@ class BaseTrainer:
                      'lr': self.cfg.TRAIN.LR * self.cfg.TRAIN.BACKBONE_MULTIPLIER}
                 ]
                 self.optimizer = torch.optim.AdamW(param_dicts, lr=self.cfg.TRAIN.LR, weight_decay=self.cfg.TRAIN.WEIGHT_DECAY)
+
+                if self.cfg.TRAIN.SCHEDULER.TYPE == 'cosine':
+
+                    self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
+                                                                                        T_0=self.cfg.TRAIN.SCHEDULER.T0_EPOCH,
+                                                                                        T_mult=self.cfg.TRAIN.SCHEDULER.T_MULT,
+                                                                                        eta_min=self.cfg.TRAIN.SCHEDULER.MIN_LR)
+                    # iter_per_epoch = int(np.floor(self.cfg.DATA.TRAIN.SAMPLE_PER_EPOCH / self.cfg.TRAIN.BATCH_SIZE))
+                    # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.cfg.TRAIN.EPOCH * iter_per_epoch,
+                    #                                                           eta_min=self.cfg.TRAIN.SCHEDULER.MIN_LR)
+                elif self.cfg.TRAIN.SCHEDULER.TYPE == 'step':
+                    self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, self.cfg.TRAIN.LR_DROP_EPOCH)
+                else:
+                    raise ValueError('Unknown scheduler type: %s' % self.cfg.TRAIN.SCHEDULER.TYPE)
             elif key == 'stats':
                 continue
             else:

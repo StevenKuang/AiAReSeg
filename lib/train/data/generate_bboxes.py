@@ -79,8 +79,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    root_dir = os.path.join(args.dataset)
-    # root_dir = os.path.join('/media/liming/Data/IDP/dataset/us_phantom')
+    # root_dir = os.path.join(args.dataset)
+    root_dir = os.path.join('/media/liming/Data/IDP/dataset/us_phantom_eval')
     # out_file = os.path.join(root_dir, "bboxes")
     flow_folder_name = "flow_cactuss_flownet2"
     store = False
@@ -105,6 +105,8 @@ if __name__ == '__main__':
         for seq_dir_name in tqdm(os.listdir(cath_dir)):
             seq_dir = os.path.join(cath_dir, seq_dir_name)
             seq_num = int(seq_dir_name.split('_')[-1])
+            # sequence_len = len(os.listdir(seq_dir))
+            # bboxes = torch.zeros((100, sequence_len, 4), device=device)
             for file in os.listdir(seq_dir):
                 if file.endswith('.flo'):
                     file_num = int(file.split('_')[-1].split('.')[0])

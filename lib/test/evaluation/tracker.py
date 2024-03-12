@@ -181,6 +181,9 @@ class Tracker:
 
         for frame_num, frame_path in enumerate(seq.frames[1:], start=1):
 
+            # if frame_num % 5 != 0:
+            #     continue
+
             if segmentation == True:
                 image = []
                 image.append(self._read_image(frame_path))

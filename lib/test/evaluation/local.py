@@ -26,8 +26,8 @@ def local_env_settings():
     # settings.catheterseg_path = '/mnt/c/Users/steve/OneDrive/Documents/12SemesterTUM/IDP/repos/dataset/new_axial_dataset_dilated2'
     # settings.catheterseg_path = '/media/liming/Data/IDP/dataset/new_axial_dataset_dilated2'
     settings.catheterseg_path= '/home/liming/Documents/new_axial_dataset_dilated2'
-    settings.cathetertransseg_path = DATASET_ROOT + '/us_simulation3_cactuss'
-    # settings.cathetertransseg_path = DATASET_ROOT + '/us_phantom'
+    # settings.cathetertransseg_path = DATASET_ROOT + '/us_simulation3_cactuss'
+    settings.cathetertransseg_path = DATASET_ROOT + '/us_phantom'
 
     # settings.network_path = PATH + '/AiAReSeg/test/networks'  # Where tracking networks are stored
     settings.network_path = PATH + '/AiAReSeg/pretrained_networks'  # Where tracking networks are stored

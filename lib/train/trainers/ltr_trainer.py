@@ -104,19 +104,27 @@ class LTRTrainer(BaseTrainer):
 
                 # print('lr/group0: ', self.lr_scheduler.get_lr()[0])
                 # print('lr/group1: ', self.lr_scheduler.get_lr()[1])
-                wandb.log({'lr/group0': self.lr_scheduler.get_lr()[0]})
-                wandb.log({'lr/group1': self.lr_scheduler.get_lr()[1]})
+                # print('before opt_lr/group0: ', self.optimizer.param_groups[0]['lr'])
+                # print('before opt_lr/group1: ', self.optimizer.param_groups[1]['lr'])
+                # wandb.log({'lr/group0': self.lr_scheduler.get_lr()[0]})
+                # wandb.log({'lr/group1': self.lr_scheduler.get_lr()[1]})
+                wandb.log({'lr/group0': self.optimizer.param_groups[0]['lr']})
+                wandb.log({'lr/group1': self.optimizer.param_groups[1]['lr']})
 
                 if self.lr_scheduler is not None:
                     if self.settings.scheduler_type == 'cosine':
                         # normal cosine annealing
                         # self.lr_scheduler.step()
                         # cosine annealing with warm restarts
-                        if self.epoch >= 500:
-                            self.lr_scheduler.step(self.epoch - 500 + i / limit)
-                        else:
-                            self.lr_scheduler.step(self.epoch + i / limit)
+                        # if self.epoch >= self.init_epoch:
+                        self.lr_scheduler.step(self.epoch - self.init_epoch + i / limit)
+                        # else:
+                        #     self.lr_scheduler.step(self.epoch + i / limit)
 
+                # print('after opt_lr/group0: ', self.optimizer.param_groups[0]['lr'])
+                # print('after opt_lr/group1: ', self.optimizer.param_groups[1]['lr'])
+                # print('after opt_lr/group0 inside: ', self.lr_scheduler.optimizer.param_groups[0]['lr'])
+                # print('after opt_lr/group1 inside: ', self.lr_scheduler.optimizer.param_groups[1]['lr'])
 
             # Update statistics
             batch_size = data['search_images'].shape[loader.stack_dim]
@@ -126,9 +134,7 @@ class LTRTrainer(BaseTrainer):
             self._print_stats(i, loader, batch_size)
 
             avg_epoch_loss += loss.item()
-        log_epoch = self.epoch
-        if self.epoch >= 500:
-            log_epoch = self.epoch - 500
+        print(self.epoch - self.init_epoch)
         wandb.log({'epoch_loss': avg_epoch_loss / limit})
 
 

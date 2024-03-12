@@ -4,3 +4,5 @@
 # ignore all .pyc files
 *.pyc
 test/tracking_results/*
+# GitHub Copilot persisted chat sessions
+/copilot/chatSessions

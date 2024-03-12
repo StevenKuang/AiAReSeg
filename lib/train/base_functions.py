@@ -71,7 +71,7 @@ def build_dataloaders(cfg, settings):
                                     tfm.RandomHorizontalFlip_Norm(probability=0.5),
                                     tfm.RandomRotation(probability=0.3),
                                     #tfm.RandomCropping(probability=0.1),
-                                    tfm.Gaussian_Blur(probability=0.3),
+                                    # tfm.Gaussian_Blur(probability=0.3),
                                     tfm.Salt_and_pepper(probability=0.5),
                                     tfm.Normalize(mean=cfg.DATA.MEAN, std=cfg.DATA.STD)
                                     )
@@ -156,9 +156,10 @@ def get_optimizer_scheduler(net, cfg):
     optimizer = torch.optim.AdamW(param_dicts, lr=cfg.TRAIN.LR, weight_decay=cfg.TRAIN.WEIGHT_DECAY)
 
     if cfg.TRAIN.SCHEDULER.TYPE == 'cosine':
-        iter_per_epoch = int(np.floor(cfg.DATA.TRAIN.SAMPLE_PER_EPOCH / cfg.TRAIN.BATCH_SIZE))
+
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=cfg.TRAIN.SCHEDULER.T0_EPOCH,
                                                                             T_mult=cfg.TRAIN.SCHEDULER.T_MULT, eta_min=cfg.TRAIN.SCHEDULER.MIN_LR)
+        # iter_per_epoch = int(np.floor(cfg.DATA.TRAIN.SAMPLE_PER_EPOCH / cfg.TRAIN.BATCH_SIZE))
         # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.TRAIN.EPOCH * iter_per_epoch,
         #                                                           eta_min=cfg.TRAIN.SCHEDULER.MIN_LR)
     elif cfg.TRAIN.SCHEDULER.TYPE == 'step':

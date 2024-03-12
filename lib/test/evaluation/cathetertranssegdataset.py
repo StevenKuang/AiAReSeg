@@ -30,18 +30,21 @@ class CatheterTransSegDataset(BaseDataset):
             self.simu_list = ["01", "21", "09", "29"]
             self.trim_rule = [30, 40, 30, 15]
         elif subset == 'Val':
-            self.simu_list = ["21"]
-            self.trim_rule = [30]
+            # self.simu_list = ["21"]
+            # self.trim_rule = [41]
             # self.simu_list = ["01"]
             # self.trim_rule = [50]
+            self.simu_list = ["31"]
+            self.trim_rule = [0]
             # self.simu_list = ["31"]
-            # self.trim_rule = [90]
-            # self.simu_list = ["31"]
-            # self.trim_rule = [50]
+            # self.trim_rule = [61]
 
-            # # phantom test
-            # self.simu_list = ["02"]
-            # self.trim_rule = [1]
+            # phantom test
+            phantom_simu_list = ["02", "04", "05", "06", "07", "08"]
+            self.select = 1
+            self.simu_list = [phantom_simu_list[self.select]]
+            self.trim_rule = [0]
+            self.frame_trim = [14, 285, 150, 358, 131]
 
         else:
             AttributeError("The mode is not recognized")
@@ -224,10 +227,10 @@ class CatheterTransSegDataset(BaseDataset):
         flow_w, flow_h = first_flow.shape[:2]
         init_frame_id = None
         init_bbox = None
-        frame_trim = 0          # 150 has some result
+        frame_trim = self.frame_trim[self.select] if self.select is not None else 0   #  280 # 150 has some result
         for i in range(frame_trim, len(self.bboxes_dic[class_name.split('_')[-1]][sequence_number])):
             curr_box = self.bboxes_dic[class_name.split('_')[-1]][sequence_number][i]
-            if 30*30 < curr_box[2] * curr_box[3] < flow_w * flow_h / 4:
+            if 20*20 < curr_box[2] * curr_box[3] < flow_w * flow_h / 4:
                 init_frame_id = i
                 init_bbox = self.bboxes_dic[class_name.split('_')[-1]][sequence_number][i]
                 break
@@ -237,7 +240,7 @@ class CatheterTransSegDataset(BaseDataset):
         gt_flow_path = join(seq_path.replace("filtered", "flow_cactuss_flownet2"), f"{init_frame_id:06d}.flo")
         gt_flow = torch.tensor(flow_utils.read_gen(gt_flow_path))
 
-        threshold = 0.2
+        threshold = 1   # synth: 0.2, real: 0.8
         # create a binary mask from flow
         mask_u = gt_flow.abs()[:, :, 0] > threshold
         mask_v = gt_flow.abs()[:, :, 1] > threshold
