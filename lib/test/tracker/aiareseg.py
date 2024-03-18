@@ -174,7 +174,8 @@ class AIARESEG(BaseTracker):
 
     def track(self, image, info: dict = None, seq_name: str = None, segmentation: bool = None):
         H, W, _ = image[0].shape
-        self.frame_id += 5
+        stride = 5
+        self.frame_id += stride
         # debug
         print(f"Frame {self.frame_id}" + f"\tLast valid {self.last_valid_frame}")
         # Get the t-th search region
@@ -184,12 +185,12 @@ class AIARESEG(BaseTracker):
         no_mask = True
         iter = 0
         valid_mask_count_req = 4 # minimum valid masks needed to present to form a merged mask # 2
-        max_mask_search_iter = 10  # for the first hit  # 10 # 5 for real data
+        max_mask_search_iter = 5  # for the first hit  # 10 # 5 for real data
         addi_mask_search_overhead = 5   # chances for finding additional masks
         out_full_mask = None
         first_valid_iter = None
         enlarge_factor = 0.5
-        self.params.search_factor = 1.5  # 1.5 as start may be too big
+        self.params.search_factor = 1.5 # 1.5 as start may be too big
         while no_mask == True:
             if segmentation == True:
                 if (0 <= iter < ((addi_mask_search_overhead + first_valid_iter) if first_valid_iter is not None else max_mask_search_iter)):
@@ -209,13 +210,20 @@ class AIARESEG(BaseTracker):
                     invalid_frame_tolerance = 3
                     frame_diff = 0
                     frame_diff_bloom = 0
-                    while frame_diff + invalid_frame_tolerance < self.frame_id - self.last_valid_frame:
+                    while frame_diff + invalid_frame_tolerance + (stride-1) < self.frame_id - self.last_valid_frame:
                         # boxes = self.move_bbox_towards_center(boxes, W, H, 5)
                         if self.frame_id - self.last_valid_frame > 5:
                             frame_diff_bloom += 0.2
                         frame_diff_bloom += 0.1
-                        print("bloom search factor")
+                        print("bloom search factor " + f"{frame_diff_bloom}")
                         frame_diff += 1
+
+                    if frame_diff_bloom > 5:
+                        iter += 1
+                        data_invalid = (True,)
+                        self.last_valid_frame = self.frame_id
+                        continue
+
 
                     # enlarged_search_area = self.params.search_factor * (1.0 + (0.01 * iter))
                     enlarged_search_area = (self.params.search_factor + frame_diff_bloom) * (1.0 + (enlarge_factor * iter))
@@ -833,8 +841,8 @@ class AIARESEG(BaseTracker):
                 # if torch.sum(prev_mask_largest_region * torch.tensor(labels == i).float()) > torch.sum(torch.tensor(labels == i).float()) * overlap_threshold:
                 if torch.sum(prev_mask_largest_region * torch.tensor(labels == i).float()) > torch.sum(prev_mask_largest_region) * 0.5:
                     valid_labels[i] = True
-                    # keep_prev = True
-                    # keep_prev_largest = True
+                    keep_prev = True
+                    keep_prev_largest = True
 
             if not any(valid_labels):
                 need_pca = True
@@ -880,18 +888,21 @@ class AIARESEG(BaseTracker):
                     # dir_vec = normalize([centroids[i] - prev_center]).ravel()
                     dir_vec = centroids[i] - prev_center
                     # project to major axis
-                    # projected_len.append(np.abs(np.dot(dir_vec, major_axis))/np.linalg.norm(major_axis))
+                    projected_len.append(np.abs(np.dot(dir_vec, major_axis)))
                     # project to minor axis
-                    projected_len.append(np.abs(np.dot(dir_vec, minor_axis)))
+                    # projected_len.append(np.abs(np.dot(dir_vec, minor_axis)))
 
                 if not any(projected_len):
                     need_pca = False
                     keep_prev = True
                 else:
-                    valid_labels[np.argmax(projected_len) + 1] = True
-                    # valid_labels[np.argmin(projected_len) + 1] = True
-                    keep_prev_largest = True
-                    keep_prev = True
+                    # valid_labels[np.argmax(projected_len) + 1] = True
+                    valid_labels[np.argmin(projected_len) + 1] = True
+                    # check second smallest
+                    if len(projected_len) > 1 and projected_len[np.argsort(projected_len)[1]] - projected_len[np.argsort(projected_len)[0]] < 5:
+                        valid_labels[np.argsort(projected_len)[1] + 1] = True
+                    # keep_prev_largest = True
+                    # keep_prev = True
 
             # Step 3: if there's more than 1 valid label, we remove all labels that have no overlap with previous bbox
             if sum(valid_labels) > 1:
@@ -922,6 +933,9 @@ class AIARESEG(BaseTracker):
         if need_pca:
             plt.scatter(centroids[1:, 1], centroids[1:, 0], c='r', s=40)
             plt.scatter(prev_center[1], prev_center[0], c='b', s=40)
+            # # print projected_len near the centroid
+            # for i in possible_labels:
+            #     plt.text(centroids[i][1], centroids[i][0], f'{projected_len[i-1]:.2f}', fontsize=8, color='r')
             plt.quiver(mean[0], mean[1], major_axis[0], major_axis[1], color='r', scale=5)  # red as major
             plt.quiver(mean[0], mean[1], minor_axis[0], minor_axis[1], color='g', scale=5)
 
@@ -937,7 +951,7 @@ class AIARESEG(BaseTracker):
         largest_component = torch.tensor(largest_component).float()
 
         # If the largest component is too small, keep the previous mask
-        if torch.sum(largest_component) < 200:
+        if torch.sum(largest_component) < 400:
             keep_prev = True
         if keep_prev:
             if keep_prev_largest:

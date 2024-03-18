@@ -6,7 +6,7 @@ import os
 from PIL import Image
 import monai
 import cv2 as cv
-
+from tqdm import tqdm
 # In this script we will visualise the results after we pass the sequences through the AiA track framework
 # The inferencing from the model will not be done in real time, we will implement that in another script instead
 # In this script we will simply specify a sequence, and the visualise the bounding boxes one by one
@@ -51,58 +51,149 @@ def sort_numeric_part(name):
     # Extract the numeric part as an integer
     return int(name[:-4])
 
-def open_mask(mask_path, seq_no='51'):
+def open_mask(mask_path, seq_no='51', mode="synthetic"):
 
     """
     Outputs a list full of the ground truth bounding boxes for each of the images of the sequence
     """
+    if mode == "synthetic":
+        if '31' in mask_path:
+            mask_folder_path = os.path.join(mask_path,f"label0031_%02d"%(int(seq_no)))
+        else:
+            mask_folder_path = os.path.join(mask_path, f"label0008_%02d" % (int(seq_no)))
+        names, files = get_names(mask_folder_path)
+        mask_list = []
+        final_elem = files[0].split('/')[-1]
+        if len(final_elem)>5:
+            files = sorted(files)
+        else:
+            files = sorted(files, key=sort_seq_names)
 
-    mask_folder_path = os.path.join(mask_path,f"label0031_%02d"%(int(seq_no)))
 
-    names, files = get_names(mask_folder_path)
-    mask_list = []
-    final_elem = files[0].split('/')[-1]
-    if len(final_elem)>5:
+        for file in files:
+            mask = torch.tensor(cv2.imread(file, cv2.IMREAD_GRAYSCALE))
+            mask_list.append(mask)
+
+        return torch.stack([mask for mask in mask_list], dim=0)
+    elif mode == "phantom":
+        choice = int(seq_no)
+        # phantom_list = ["02", "04", "05", "06", "07"]
+        # phantom_frame_trim = [0, 234, 13, 220, 380]
+        phantom_list = ["10", "13", "15"]
+        phantom_frame_trim = [29, 90, 125]
+        stride = 5
+
+        gt_mask_path = mask_path + 'phantom_transverse_' + phantom_list[choice] + '/filtered_masks'
+        mask_folder_path = os.path.join(gt_mask_path, f"Catheter_0")
+
+        names, files = get_names(mask_folder_path)
+        mask_list = []
+
+        final_elem = files[0].split('/')[-1]
+        if len(final_elem) > 5:
+            files = sorted(files)
+        else:
+            files = sorted(files, key=sort_seq_names)
+
+        mask_list.append(torch.tensor(cv2.imread(files[phantom_frame_trim[choice]], cv2.IMREAD_GRAYSCALE)))
+        # find next number larger than the phantom_frame_trim[choice] and is also a multiple of stride as the start_num
+        start_num = phantom_frame_trim[choice] + stride - (phantom_frame_trim[choice] % stride)
+        for i in range(start_num, len(files), stride):
+            mask = torch.tensor(cv2.imread(files[i], cv2.IMREAD_GRAYSCALE))
+            mask_list.append(mask)
+
+        return torch.stack([mask for mask in mask_list], dim=0)
+
+
+
+
+def open_model_mask(mask_path, seq_no='51', mode="synthetic"):
+    if mode == "synthetic":
+        if '31' in mask_path:
+            mask_folder_path = os.path.join(mask_path,f"label0031_%02d"%(int(seq_no)))
+        else:
+            mask_folder_path = os.path.join(mask_path, f"label0008_%02d" % (int(seq_no)))
+
+        names, files = get_names(mask_folder_path)
+        mask_list = []
+        final_elem = files[0].split('/')[-1]
+
+        files = sorted(files, key=sort_numeric_part)
+
+
+        for file in files:
+            mask = torch.tensor(cv2.imread(file, cv2.IMREAD_GRAYSCALE))
+            mask_list.append(mask)
+
+        return torch.stack([mask for mask in mask_list], dim=0)
+    elif mode == "phantom":
+        choice = int(seq_no)
+        # phantom_list = ["02", "04", "05", "06", "07"]
+        # phantom_frame_trim = [0, 234, 13, 220, 380]
+        phantom_list = ["10", "13", "15"]
+        phantom_frame_trim = [29, 90, 125]
+        model_pred_folder_name = 'filtered'         # "filtered_gwm"
+        stride = 5
+        if 'gwm' in mask_path:
+            model_mask_path = mask_path + 'Catheter_0' + str(choice) + '/'
+            mask_folder_path = os.path.join(model_mask_path)
+            names, files = get_names(mask_folder_path)
+            mask_list = []
+            files = sorted(files, key=sort_numeric_part)
+            mask_list.append(torch.tensor(cv2.imread(files[phantom_frame_trim[choice]], cv2.IMREAD_GRAYSCALE)))
+            start_num = phantom_frame_trim[choice] + stride - (phantom_frame_trim[choice] % stride)
+            for i in range(start_num, len(files), stride):
+                mask = torch.tensor(cv2.imread(files[i], cv2.IMREAD_GRAYSCALE))
+                mask_list.append(mask)
+            return torch.stack([mask for mask in mask_list], dim=0)
+        else:
+            model_mask_path = mask_path + 'phantom_transverse_' + phantom_list[choice] + '/' + model_pred_folder_name
+            mask_folder_path = os.path.join(model_mask_path, f"Catheter_0")
+            names, files = get_names(mask_folder_path)
+            mask_list = []
+            files = sorted(files, key=sort_numeric_part)
+            for i in range(0, len(files)):
+                file = files[i]
+                mask = torch.tensor(cv2.imread(file, cv2.IMREAD_GRAYSCALE))
+                mask_list.append(mask)
+            return torch.stack([mask for mask in mask_list], dim=0)
+def open_images(image_path, seq_no='51', mode="synthetic"):
+
+    if mode == "synthetic":
+        #image_folder_path = os.path.join(image_path, 'Catheter', f'Catheter-{seq_no}', 'img')
+        if '31' in image_path:
+            image_folder_path = os.path.join(image_path, f"label0031_%02d"%(int(seq_no)))
+        else:
+            image_folder_path = os.path.join(image_path, f"label0008_%02d"%(int(seq_no)))
+
+        names, files = get_names(image_folder_path)
+        image_list = []
         files = sorted(files)
-    else:
-        files = sorted(files, key=sort_seq_names)
+        for file in files:
+            image = torch.tensor(cv2.imread(file, cv2.IMREAD_COLOR))
+            image_list.append(image)
 
+        return torch.stack([image for image in image_list], dim=0)
+    elif mode == "phantom":
+        choice = int(seq_no)
+        # phantom_list = ["02", "04", "05", "06", "07"]
+        # phantom_frame_trim = [0, 234, 13, 220, 380]
+        phantom_list = ["10", "13", "15"]
+        phantom_frame_trim = [29, 90, 125]
+        stride = 5
+        image_path = image_path + '/phantom_transverse_' + phantom_list[choice] + '/filtered'
+        image_folder_path = os.path.join(image_path, f"Catheter_0")
+        names, files = get_names(image_folder_path)
+        image_list = []
+        files = sorted(files)
 
-    for file in files:
-        mask = torch.tensor(cv2.imread(file, cv2.IMREAD_GRAYSCALE))
-        mask_list.append(mask)
+        image_list.append(torch.tensor(cv2.imread(files[phantom_frame_trim[choice]])))
+        start_num = phantom_frame_trim[choice] + 5 - (phantom_frame_trim[choice] % 5)
+        for i in range(start_num, len(files), stride):
+            image = torch.tensor(cv2.imread(files[i]))
+            image_list.append(image)
 
-    return torch.stack([mask for mask in mask_list], dim=0)
-
-def open_model_mask(mask_path, seq_no='51'):
-    mask_folder_path = os.path.join(mask_path,f"label0031_%02d"%(int(seq_no)))
-
-    names, files = get_names(mask_folder_path)
-    mask_list = []
-    final_elem = files[0].split('/')[-1]
-
-    files = sorted(files, key=sort_numeric_part)
-
-
-
-    for file in files:
-        mask = torch.tensor(cv2.imread(file, cv2.IMREAD_GRAYSCALE))
-        mask_list.append(mask)
-
-    return torch.stack([mask for mask in mask_list], dim=0)
-
-def open_images(image_path, seq_no='51'):
-
-    #image_folder_path = os.path.join(image_path, 'Catheter', f'Catheter-{seq_no}', 'img')
-    image_folder_path = os.path.join(image_path, f"label0031_%02d"%(int(seq_no)))
-    names, files = get_names(image_folder_path)
-    image_list = []
-    files = sorted(files)
-    for file in files:
-        image = torch.tensor(cv2.imread(file, cv2.IMREAD_COLOR))
-        image_list.append(image)
-
-    return torch.stack([image for image in image_list], dim=0)
+        return torch.stack([image for image in image_list], dim=0)
 
 
 def loop_image(image_tensor, gt_mask_tensor, model_mask_tensor, id):
@@ -146,69 +237,129 @@ def loop_image(image_tensor, gt_mask_tensor, model_mask_tensor, id):
         plt.figure(figsize=(15,15))
         ax = plt.gca()
         plt.imshow(output2)
+        # plt.title(f"Frame {i}")
         ax.set_axis_off()
-        plt.show()
+        # plt.show()
+        # remove margins
+        plt.margins(0, 0)
 
-
-        # save_dir = f'/media/liming/Data/IDP/dataset/results/aligned_jit_step_560/{id}'
-        # #
-        # if not os.path.exists(save_dir):
-        #     os.mkdir(save_dir)
-        # plt.savefig(os.path.join(save_dir,f'{i:06d}.png'))
+        save_dir = f'/media/liming/Data/IDP/dataset/results/aligned_small_jit_step_560/video/{id}'
+        #
+        if not os.path.exists(save_dir):
+            os.mkdir(save_dir)
+        plt.savefig(os.path.join(save_dir,f'{i:06d}.png'))
         plt.close()
 
 
 if __name__ == '__main__':
 
     gt_mask_path = '/media/liming/Data/IDP/dataset/us_simulation3_cactuss/rotations_transverse_31/filtered_masks'
+    gt_mask_path = '/media/liming/Data/IDP/dataset/us_simulation3_cactuss/rotations_transverse_31/val'
     image_path = '/media/liming/Data/IDP/dataset/us_simulation3_cactuss/rotations_transverse_31/filtered'
 
     # model_mask_path = '/media/liming/Data/IDP/AiAProj/AiAReSeg/test/tracking_results/aiareseg/AiASeg_unsupervised/rotations_transverse_31/aligned_step_584'
     # model_mask_path = '/media/liming/Data/IDP/AiAProj/AiAReSeg/test/tracking_results/aiareseg/AiASeg_unsupervised/rotations_transverse_31/misaligned_0585'
     # model_mask_path = '/media/liming/Data/IDP/AiAProj/AiAReSeg/test/tracking_results/aiareseg/AiASeg_unsupervised/rotations_transverse_31/misaligned_0454'
     model_mask_path = '/media/liming/Data/IDP/AiAProj/AiAReSeg/test/tracking_results/aiareseg/AiASeg_unsupervised/rotations_transverse_31/aligned_jit_step_560'
+    # model_mask_path = '/media/liming/Data/IDP/AiAProj/AiAReSeg/test/tracking_results/aiareseg/AiASeg_unsupervised/rotations_transverse_31/aligned_cosine_630'
     # model_mask_path = '/media/liming/Data/IDP/AiAProj/AiAReSeg/test/tracking_results/aiareseg/AiASeg_unsupervised/rotations_transverse_31/filtered'
+    # model_mask_path = '/media/liming/Data/IDP/AiAProj/AiAReSeg/test/tracking_results/aiareseg/AiASeg_unsupervised/rotations_transverse_31/aligned_large_jit_561'
+    # ------------------------------------------------------------------------------------------- #
 
-    # phantom_list = ["02", "04", "05", "06", "07", "08"]
-    # phantom_frame_trim = [0, 0, 0, 0, 0, 0]
-    # chosen = 0
-    # model_pred_folder_name = 'filtered'
+    # # model_mask_path = '/media/liming/Data/IDP/dataset/us_simulation3_cactuss_gwm/preds'
+    # # model_mask_path = '/media/liming/Data/IDP/dataset/us_simulation3_cactuss_gwm/nnunet/'
+    # # model_mask_path = '/media/liming/Data/IDP/dataset/results/notgwm_nnunet/'
     #
-    # gt_mask_path = '/media/liming/Data/IDP/dataset/us_phantom/phantom_transverse_' + phantom_list[chosen] + '/filtered_masks'
-    # image_path = '/media/liming/Data/IDP/dataset/us_phantom/phantom_transverse_' + phantom_list[chosen] + '/filtered'
-    # model_mask_path = '/media/liming/Data/IDP/AiAProj/AiAReSeg/test/tracking_results/aiareseg/AiASeg_unsupervised/phantom_transverse_' + phantom_list[chosen] + '/' + model_pred_folder_name
+    # gt_mask_path = '/media/liming/Data/IDP/dataset/us_phantom/'
+    # image_path = '/media/liming/Data/IDP/dataset/us_phantom/'
+    # model_mask_path = '/media/liming/Data/IDP/dataset/results/aligned_small_jit_step_560/phantom/'
+    # # model_mask_path = '/media/liming/Data/IDP/dataset/us_simulation3_cactuss_gwm/preds/'
+    # # model_mask_path = '/media/liming/Data/IDP/dataset/us_simulation3_cactuss_gwm/nnunet/'
+    # phantom_list = ["02", "04", "05", "06", "07"]
+    # catheter_num = [0,1,2,3,4]
+    # phantom_frame_trim = [0, 234, 13, 220, 380]
+    # ------------------------------------------------------------------------------------------- #
+    # gt_mask_path = '/media/liming/Data/IDP/dataset/us_phantom/'
+    # image_path = '/media/liming/Data/IDP/dataset/us_phantom/'
+    # model_mask_path = '/media/liming/Data/IDP/dataset/results/aligned_small_jit_step_560/phantom/'
+    # phantom_list = ["10", "13", "15"]
+    # phantom_frame_trim = [29,90,125]     # 40 + 85
+    # catheter_num = [5, 6, 7]
 
+    # ------------------------------------------------------------------------------------------- #
+    # gt_mask_path = '/media/liming/Data/IDP/dataset/us_simulation3_cactuss/rotations_transverse_08/filtered_masks'
+    # image_path = '/media/liming/Data/IDP/dataset/us_simulation3_cactuss/rotations_transverse_08/filtered'
+    # model_mask_path = '/media/liming/Data/IDP/AiAProj/AiAReSeg/test/tracking_results/aiareseg/AiASeg_unsupervised/rotations_transverse_08/filtered'
+    # # model_mask_path = '/media/liming/Data/IDP/AiAProj/AiAReSeg/test/tracking_results/aiareseg/AiASeg_unsupervised/rotations_transverse_08/aligned_jit_step_560'
+    # # model_mask_path = '/media/liming/Data/IDP/AiAProj/AiAReSeg/test/tracking_results/aiareseg/AiASeg_unsupervised/rotations_transverse_08/misaligned_0454'
+    # # model_mask_path = '/media/liming/Data/IDP/dataset/us_simulation3_cactuss_gwm/preds'
+    # # model_mask_path = '/media/liming/Data/IDP/dataset/results/notgwm_nnunet/'
 
+    # ------------------------------------------------------------------------------------------- #
     dice = monai.losses.DiceLoss(jaccard=False)
     mae = monai.metrics.MAEMetric()
 
     dice_list = []
     mae_list = []
     # count subfolders in model_mask_path
-    folder_count = sum(os.path.isdir(os.path.join(model_mask_path, entry)) for entry in os.listdir(model_mask_path))
-    for i in range(0, folder_count):
+    if 'phantom' in gt_mask_path:
+        folder_count = len(phantom_list)
+        gt_seq_nums = catheter_num
+    else:
+        folder_count = sum(os.path.isdir(os.path.join(model_mask_path, entry)) for entry in os.listdir(model_mask_path))
+        gt_seq_nums = [int(entry.split('_')[-1]) for entry in os.listdir(gt_mask_path)]
+    # folder_count = 1
+    for i in tqdm(range(0, folder_count)):     # 20's good for viz
+        # if i not in gt_seq_nums:
+        #     continue
         seq_no = str(i)
-        gt_mask_tensor = open_mask(gt_mask_path, seq_no=seq_no).unsqueeze(1)
-        model_mask_tensor = open_model_mask(model_mask_path, seq_no=seq_no).unsqueeze(1)
-        # model_mask_tensor = torch.roll(model_mask_tensor, shifts=10, dims=2)
-        # model_mask_tensor = torch.roll(model_mask_tensor, shifts=10, dims=3)
+        if 'phantom' in gt_mask_path:
+            # seq_no is the choice of the phantom
+            gt_mask_tensor = open_mask(gt_mask_path, seq_no=seq_no, mode='phantom').unsqueeze(1)
+            model_mask_tensor = open_model_mask(model_mask_path, seq_no=seq_no, mode='phantom').unsqueeze(1)
+            image_tensor = open_images(image_path, seq_no=seq_no, mode='phantom')
+        else:
+            gt_mask_tensor = open_mask(gt_mask_path, seq_no=seq_no).unsqueeze(1)
+            model_mask_tensor = open_model_mask(model_mask_path, seq_no=seq_no).unsqueeze(1)
+            image_tensor = open_images(image_path, seq_no=seq_no)
+
+        if 'misaligned' in model_mask_path:
+            model_mask_tensor = torch.roll(model_mask_tensor, shifts=10, dims=2)
+            model_mask_tensor = torch.roll(model_mask_tensor, shifts=10, dims=3)
+
         if gt_mask_tensor.max() == 2:
             gt_mask_np = gt_mask_tensor.numpy()
             # gt_mask_tensor of shape (B, C, H, W)
             # do some dialation on the catheter
-            kernel = 2 * np.ones((10, 10), np.uint8)
-            gt_mask_tensor = (gt_mask_np == 2).astype(np.uint8)  # Isolate the catheter
-            # dilate the gt_mask_tensor using the kernel
-            for j in range(gt_mask_tensor.shape[0]):
-                gt_mask_tensor[j, 0, :, :] = cv2.dilate(gt_mask_tensor[j, 0, :, :], kernel, iterations=2)
-            gt_mask_tensor = torch.tensor(gt_mask_tensor)
-            # vertical flip gt_mask_tensor of shape (B, C, H, W)
-            gt_mask_tensor = torch.flip(gt_mask_tensor, [2])
-            # move the catheter up by 5 pixels
-            gt_mask_tensor = torch.roll(gt_mask_tensor, shifts=-10, dims=2)
 
-        # gt_mask_tensor = torch.where(gt_mask_tensor==2,1,0)
-        image_tensor = open_images(image_path, seq_no=seq_no)
+            gt_mask_tensor = (gt_mask_np == 2).astype(np.uint8)  # Isolate the catheter
+            if 'phantom' not in gt_mask_path:
+                kernel = 2 * np.ones((10, 10), np.uint8)
+                # dilate the gt_mask_tensor using the kernel
+                for j in range(gt_mask_tensor.shape[0]):
+                    gt_mask_tensor[j, 0, :, :] = cv2.dilate(gt_mask_tensor[j, 0, :, :], kernel, iterations=1)
+                gt_mask_tensor = torch.tensor(gt_mask_tensor)
+
+                # vertical flip gt_mask_tensor of shape (B, C, H, W)
+                gt_mask_tensor = torch.flip(gt_mask_tensor, [2])
+                # move the catheter up by 5 pixels
+                gt_mask_tensor = torch.roll(gt_mask_tensor, shifts=-10, dims=2)
+            else:
+                kernel = 2 * np.ones((3, 3), np.uint8)
+                for j in range(gt_mask_tensor.shape[0]):
+                    gt_mask_tensor[j, 0, :, :] = cv2.dilate(gt_mask_tensor[j, 0, :, :], kernel, iterations=1)
+                gt_mask_tensor = torch.tensor(gt_mask_tensor)
+        else:
+            if 'phantom' not in gt_mask_path:
+                gt_mask_tensor = torch.flip(gt_mask_tensor, [2])
+
+        # if 'gwm' in model_mask_path and 'unet' not in model_mask_path:
+        #     if i > 0:
+        #         # flip 1 and 0 in model_mask_tensor
+        #         model_mask_tensor = 1 - model_mask_tensor
+
+
+
         if gt_mask_tensor.shape[0] > model_mask_tensor.shape[0]:
             frame_diff = gt_mask_tensor.shape[0] - model_mask_tensor.shape[0]
             # Pad the model mask tensor at the start
@@ -218,7 +369,7 @@ if __name__ == '__main__':
         dice_list.append(dice(gt_mask_tensor, model_mask_tensor).item())
         mae_list.append(torch.mean(mae(gt_mask_tensor, model_mask_tensor)).item())
 
-        loop_image(image_tensor, gt_mask_tensor, model_mask_tensor, id=i)
+        # loop_image(image_tensor, gt_mask_tensor, model_mask_tensor, id=i)
     dice_list = np.array(dice_list)
     average_dice = np.mean(dice_list)
     sd_dice = np.std(dice_list)
@@ -226,7 +377,9 @@ if __name__ == '__main__':
     mae_list = np.array(mae_list)
     average_mae = np.mean(mae_list)
     sd_mae = np.std(mae_list)
-
+    # print the entire list of dice and mae
+    for i in range(len(dice_list)):
+        print(f"Seq {i} -- Dice_loss:{dice_list[i]} -- MAE: {mae_list[i]}")
     print("Done")
     print(f"Dice_loss:{average_dice}")
     print(f"SD Dice_loss:{sd_dice}")

@@ -30,21 +30,50 @@ class CatheterTransSegDataset(BaseDataset):
             self.simu_list = ["01", "21", "09", "29"]
             self.trim_rule = [30, 40, 30, 15]
         elif subset == 'Val':
-            # self.simu_list = ["21"]
-            # self.trim_rule = [41]
+            self.select = None
+            self.simu_list = ["21"]
+            self.trim_rule = [41]
             # self.simu_list = ["01"]
             # self.trim_rule = [50]
-            self.simu_list = ["31"]
-            self.trim_rule = [0]
+            # self.simu_list = ["31"]
+            # self.trim_rule = [20]
             # self.simu_list = ["31"]
             # self.trim_rule = [61]
+            # self.simu_list = ["08"]
+            # self.trim_rule = [0]
 
-            # phantom test
-            phantom_simu_list = ["02", "04", "05", "06", "07", "08"]
-            self.select = 1
-            self.simu_list = [phantom_simu_list[self.select]]
-            self.trim_rule = [0]
-            self.frame_trim = [14, 285, 150, 358, 131]
+            # # phantom test
+            # phantom_simu_list = ["02", "04", "05", "06", "07"]      # 08 has problem, cath too thin
+            # self.select = 1
+            # self.simu_list = [phantom_simu_list[self.select]]
+            # self.trim_rule = [0]
+            # self.frame_trim = [0, 234, 13, 220, 380]
+            # erosion = [0, 1, 0, 1, 0]
+            # search_factor = [1, 1, 1, 1.2, 1]
+            # keep_prev = [0, 0, 0, 0, 0]
+            # # 0 must turn erosion off
+            # # 3 only work with thresh= 0.5, start 220, erode = 1, keep_prev = 1
+            # # [0, 234, 13, 220, 380, 372]
+            # # self.frame_trim = [3, 148, 11, 9, 0, 0]
+            # # self.frame_trim = [100, 50, 11, 358, 131]
+
+            # phantom_simu_list = ["08", "09", "10", "11", "12", "13", "14", "15"]
+            # # Catheter-3 = 10, 4=11, 5=12, 6=13, 7=14, 8=15
+            # # do eval on 3, 6, 7, 8
+            # phantom_simu_list = ["10", "13", "14", "15"]
+            # self.select = 3
+            # self.simu_list = [phantom_simu_list[self.select]]
+            # self.trim_rule = [0]
+            # # self.frame_trim = [190, 105, 0, 0, 0, 0,0,0,31]
+            # self.frame_trim = [29, 0, 294, 40]
+            # # thresh: 1, 0.4, 0.4, 1
+            # # erosion: 0, 0, 0, 0
+
+            # phantom_simu_list = ["50", "51", "52", "53"]        # 3, 4, 7,8
+            # self.select = 3
+            # self.simu_list = [phantom_simu_list[self.select]]
+            # self.trim_rule = [0]
+            # self.frame_trim = [100]*4
 
         else:
             AttributeError("The mode is not recognized")
@@ -240,7 +269,7 @@ class CatheterTransSegDataset(BaseDataset):
         gt_flow_path = join(seq_path.replace("filtered", "flow_cactuss_flownet2"), f"{init_frame_id:06d}.flo")
         gt_flow = torch.tensor(flow_utils.read_gen(gt_flow_path))
 
-        threshold = 1   # synth: 0.2, real: 0.8
+        threshold = 1 if self.select is not None else 0.2   # synth: 0.2, real: 0.8
         # create a binary mask from flow
         mask_u = gt_flow.abs()[:, :, 0] > threshold
         mask_v = gt_flow.abs()[:, :, 1] > threshold
@@ -253,7 +282,11 @@ class CatheterTransSegDataset(BaseDataset):
             # use padding instead of interpolation
             ground_truth_mask_from_flow = torch.nn.functional.pad(ground_truth_mask_from_flow.unsqueeze(0), ((self.width - ground_truth_mask_from_flow.shape[2]) // 2, (self.width - ground_truth_mask_from_flow.shape[2]) // 2, (self.height - ground_truth_mask_from_flow.shape[1]) // 2, (self.height - ground_truth_mask_from_flow.shape[1]) // 2))
             ground_truth_mask_from_flow = ground_truth_mask_from_flow.squeeze(0).squeeze(0)
+            if self.select is not None:
+                # ignore the part in the middle (330, 270, 90, 90)
+                ground_truth_mask_from_flow[270:360, 330:420] = 0
             ground_truth_mask_from_flow = self.extract_largest_component(ground_truth_mask_from_flow)
+
 
         # smooth the mask from flow
         # ground_truth_mask_from_flow = smooth_mask_batch(ground_truth_mask_from_flow.unsqueeze(0).unsqueeze(0)).squeeze(0).squeeze(0)

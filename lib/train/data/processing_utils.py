@@ -137,19 +137,19 @@ def sample_image_seg(im, seg_mask=None, bbox=None, search_area_factor=None, outp
     # print the cropped region in format of x1y1wh
     print("Cropped region: ", x1 + x1_pad, y1 + y1_pad, x2 - x2_pad - (x1 + x1_pad), y2 - y2_pad - (y1 + y1_pad), "\tsearch area factor: ", search_area_factor, "\tcrop_sz: ", crop_sz)
 
-    # # Lets plot both the image and the bounding box
-    # fig, ax = plt.subplots(1,1, figsize=(10,10))
-    # rgb_mask = torch.tensor(seg_mask[0]).unsqueeze(0).unsqueeze(0).repeat(1, 3, 1, 1)
-    # rgb_mask = rgb_mask.permute(0, 2, 3, 1).detach().cpu().numpy().astype(np.uint8) * 255
-    # rgb_overlay = cv.addWeighted(im, 1, rgb_mask[0], 0.5, 0)
-    # ax.imshow(rgb_overlay)
-    # rect = patches.Rectangle((int(bbox[0]), int(bbox[1])), int(bbox[2]), int(bbox[3]), linewidth=2,  edgecolor='r', facecolor='none')
-    # ax.add_patch(rect)
-    # #  plot the cropping box on top of im before and after expanding
-    # rect2 = patches.Rectangle((int(x1 + x1_pad), int(y1 + y1_pad)), x2 - x2_pad - (x1 + x1_pad), y2 - y2_pad - (y1 + y1_pad), linewidth=2, edgecolor='b', facecolor='none')
-    # ax.add_patch(rect2)
-    # plt.title("search area factor: {}".format(search_area_factor))
-    # plt.show()
+    # Lets plot both the image and the bounding box
+    fig, ax = plt.subplots(1,1, figsize=(10,10))
+    rgb_mask = torch.tensor(seg_mask[0]).unsqueeze(0).unsqueeze(0).repeat(1, 3, 1, 1)
+    rgb_mask = rgb_mask.permute(0, 2, 3, 1).detach().cpu().numpy().astype(np.uint8) * 255
+    rgb_overlay = cv.addWeighted(im, 1, rgb_mask[0], 0.5, 0)
+    ax.imshow(rgb_overlay)
+    rect = patches.Rectangle((int(bbox[0]), int(bbox[1])), int(bbox[2]), int(bbox[3]), linewidth=2,  edgecolor='r', facecolor='none')
+    ax.add_patch(rect)
+    #  plot the cropping box on top of im before and after expanding
+    rect2 = patches.Rectangle((int(x1 + x1_pad), int(y1 + y1_pad)), x2 - x2_pad - (x1 + x1_pad), y2 - y2_pad - (y1 + y1_pad), linewidth=2, edgecolor='b', facecolor='none')
+    ax.add_patch(rect2)
+    plt.title("search area factor: {}".format(search_area_factor))
+    plt.show()
 
     # Crop the target mask as well
     if isinstance(seg_mask,list) or isinstance(seg_mask,tuple):
@@ -620,12 +620,12 @@ def flows_to_boxes(flows: torch.Tensor) -> torch.Tensor:
     num_flows = flows.shape[0]
     frame_height, frame_width = flows[0].shape[:2]
 
-    # we only consider flow larger than a threshold to be significant,
-    # if a change in one direction is too small, we set it to 0
+    # # we only consider flow larger than a threshold to be significant,
+    # # if a change in one direction is too small, we set it to 0
     # temp_flows = flows.clone()
-    # threshold = 0.1
+    # threshold = 0.2
     # temp_flows[temp_flows.abs() < threshold] = 0
-
+    #
     # # debug
     # temp_flow_before = flow_utils.flow2img(flows[0].cpu().numpy())
     # before = torch.tensor(temp_flow_before).float() / 255.0
@@ -642,7 +642,7 @@ def flows_to_boxes(flows: torch.Tensor) -> torch.Tensor:
 
     # Get the bounding box
     bounding_boxes = torch.zeros((num_flows, 4), device=flows.device, dtype=torch.float)
-    threshold = 0.5     # for real data this needs to be 1, syth can use 0.5 or 0.2
+    threshold = 3     # for real data this needs to be 1, syth can use 0.5 or 0.2
     for index, flow in enumerate(flows):
         v, u, _ = torch.where(torch.abs(flow) > threshold)
         # print('u:' + str(u.shape) + 'v:' + str(v.shape))

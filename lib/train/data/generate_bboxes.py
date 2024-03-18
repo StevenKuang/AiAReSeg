@@ -79,11 +79,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # root_dir = os.path.join(args.dataset)
-    root_dir = os.path.join('/media/liming/Data/IDP/dataset/us_phantom_eval')
+    root_dir = os.path.join(args.dataset)
+    root_dir = os.path.join('/media/liming/Data/IDP/dataset/us_phantom')
     # out_file = os.path.join(root_dir, "bboxes")
     flow_folder_name = "flow_cactuss_flownet2"
-    store = False
+    store = True
     im_shape = (600, 800, 3)
 
     # loop through the folders in the root directory
@@ -94,7 +94,7 @@ if __name__ == '__main__':
         out_file_path = os.path.join(root_dir, cath_dir_name, "bboxes.pt")
         if os.path.exists(out_file_path) and store:
             overwrite = input(f"File {out_file_path} already exists. Overwrite? (y/n)")
-            if overwrite.lower() != 'y':
+            if overwrite.lower() == 'y':
                 os.remove(out_file_path)
             else:
                 continue

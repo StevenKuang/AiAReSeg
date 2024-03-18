@@ -11,6 +11,7 @@ import torch
 
 from lib.test.evaluation.environment import env_settings
 import lib.train.data.transforms as tfm
+import matplotlib.pyplot as plt
 
 def trackerlist(name: str, parameter_name: str, dataset_name: str, run_ids=None, display_name: str = None,
                 result_only=False):
@@ -134,7 +135,23 @@ class Tracker:
 
         if segmentation == True:
             image = []
-            image.append(self._read_image(seq.frames[0]))
+            if 'phantom' in seq.name and ('16' or '17') not in seq.name:
+                raw_image = self._read_image(seq.frames[0]) # shape (H, W, 3)
+                # box = [100, 150, 545, 320]
+                box = [100, 150, 545, 400]  # x, y, w, h, (x, y) is the lower upper corner
+                # keep only pixel inside the box, all other pixels are set to [0, 0, 0]
+                x, y, w, h = box
+                processed_image = np.zeros_like(raw_image)
+                processed_image[y:y + h, x:x + w] = raw_image[y:y + h, x:x + w]
+                # erode the image a bit
+                kernel = np.ones((3, 3), np.uint8)
+                # for i in range(3):
+                #     processed_image[:, :, i] = cv.erode(processed_image[:, :, i], kernel, iterations=1)
+                # plt.imshow(processed_image)
+                # plt.show()
+                image.append(processed_image)
+            else:
+                image.append(self._read_image(seq.frames[0]))
 
         else:
             image = self._read_image(seq.frames[0])
@@ -181,12 +198,28 @@ class Tracker:
 
         for frame_num, frame_path in enumerate(seq.frames[1:], start=1):
 
-            # if frame_num % 5 != 0:
-            #     continue
+            if frame_num % 5 != 0:
+                continue
 
             if segmentation == True:
                 image = []
-                image.append(self._read_image(frame_path))
+                if 'phantom' in seq.name:
+                    raw_image = self._read_image(frame_path)  # shape (H, W, 3)
+                    box = [100, 150, 545, 400]  # x, y, w, h, (x, y) is the left upper corner
+                    x, y, w, h = box
+                    processed_image = np.zeros_like(raw_image)
+                    processed_image[y:y + h, x:x + w] = raw_image[y:y + h, x:x + w]
+                    # erode the image a bit
+                    kernel = np.ones((3, 3), np.uint8)
+                    for i in range(3):
+                        # processed_image[:, :, i] = cv.erode(processed_image[:, :, i], kernel, iterations=1)
+                        # decrease the brightness
+                        processed_image[:, :, i] = processed_image[:, :, i] * 0.5
+                    # plt.imshow(processed_image)
+                    # plt.show()
+                    image.append(processed_image)
+                else:
+                    image.append(self._read_image(frame_path))
             else:
                 image = self._read_image(frame_path)
 
